@@ -1,0 +1,48 @@
+#!/usr/bin/env node
+'use strict';
+
+// duet launcher: start the server from the repo root, wait for /health,
+// then open the browser.
+
+const path = require('path');
+const http = require('http');
+const { spawn, execFile } = require('child_process');
+
+const ROOT = path.resolve(__dirname, '..');
+const PORT = parseInt(process.env.DUET_PORT, 10) || 7433;
+const URL_BASE = `http://127.0.0.1:${PORT}`;
+
+const server = spawn('node', [path.join(ROOT, 'server.js')], {
+  cwd: ROOT,
+  stdio: 'inherit',
+});
+
+server.on('exit', (code) => {
+  process.exit(code == null ? 1 : code);
+});
+
+const DEADLINE = Date.now() + 5000;
+
+function pollHealth() {
+  const req = http.get(`${URL_BASE}/health`, { timeout: 500 }, (res) => {
+    res.resume();
+    if (res.statusCode === 200) {
+      execFile('open', [URL_BASE]);
+      return;
+    }
+    retry();
+  });
+  req.on('timeout', () => req.destroy(new Error('timeout')));
+  req.on('error', retry);
+}
+
+function retry() {
+  if (Date.now() > DEADLINE) {
+    console.error(`duet: server did not become healthy at ${URL_BASE}/health within 5s`);
+    server.kill();
+    process.exit(1);
+  }
+  setTimeout(pollHealth, 100);
+}
+
+pollHealth();

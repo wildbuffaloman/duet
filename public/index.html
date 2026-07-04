@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>duet — a tiling agent terminal</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='0' y='2' width='7' height='12' rx='1.5' fill='%233fd3bf'/%3E%3Crect x='9' y='2' width='7' height='12' rx='1.5' fill='%23a78bfa'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/vendor/xterm.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <span class="dot-row"><span class="dot a"></span><span class="dot b"></span><span class="dot c"></span></span>
+    <span class="wordmark"><b>duet</b> <span class="m">◧◨</span></span>
+    <span class="tagline">a tiling agent terminal — panes are terminals or renders, grouped by session</span>
+    <span class="spacer"></span>
+    <span class="sess-legend" id="sessLegend"></span>
+    <button class="theme-btn" id="themeBtn" aria-label="Toggle theme">◐ theme</button>
+  </header>
+
+  <div class="toolbar">
+    <span class="focus-info" id="focusInfo">focused: <b>—</b></span>
+    <button class="tbtn" id="newSessBtn" title="Create a new session with its own color">＋ session</button>
+    <button class="tbtn" id="resetBtn" title="Forget the saved layout and start over">reset layout</button>
+    <span class="hint">split ⊞/⊟ · hover the seam to flip ⇄/⇅ · drag the seam to resize · click ▌/◪ to switch a pane · drag the grip to swap</span>
+    <span class="spacer"></span>
+    <div class="tray" id="tray"><span class="thead">hidden:</span><span class="hint" id="trayEmpty">none</span></div>
+  </div>
+
+  <main class="workspace" id="workspace"></main>
+
+  <footer class="footer">
+    <span><span class="k">terminal</span> = a real shell (PTY) in this session</span>
+    <span><span class="k">render</span> = live HTML — write <span class="k">*.html</span> to <span class="k">$DUET_CANVAS</span> and it appears</span>
+    <span>a render window is a <span class="k">view onto its session's canvas</span> — same color = same session</span>
+    <span class="spacer"></span>
+    <span><span class="k">⌘D</span> split right · <span class="k">⌘⇧D</span> split down</span>
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/vendor/xterm.js"></script>
+<script src="/vendor/addon-fit.js"></script>
+<script src="/vendor/addon-webgl.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
