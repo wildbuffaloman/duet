@@ -1,0 +1,29 @@
+#!/bin/sh
+# duet-app — open duet as a standalone app-mode window (no tabs, own dock presence).
+# Starts the server if it isn't running. Zero-build stopgap until the Tauri shell (ROADMAP M4).
+set -e
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PORT="${DUET_PORT:-7433}"
+URL="http://127.0.0.1:$PORT"
+
+if ! curl -s -m 2 "$URL/health" | grep -q '"ok"'; then
+  echo "duet: starting server..."
+  (cd "$DIR" && nohup node server.js > /tmp/duet.log 2>&1 &)
+  for i in $(seq 1 25); do
+    sleep 0.2
+    curl -s -m 2 "$URL/health" | grep -q '"ok"' && break
+  done
+fi
+curl -s -m 2 "$URL/health" | grep -q '"ok"' || { echo "duet: server failed to start — see /tmp/duet.log"; exit 1; }
+
+# App-mode window: launch the browser binary directly so --app works even when the browser is already running.
+BRAVE="/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+if [ -x "$BRAVE" ]; then
+  "$BRAVE" --app="$URL" > /dev/null 2>&1 &
+elif [ -x "$CHROME" ]; then
+  "$CHROME" --app="$URL" > /dev/null 2>&1 &
+else
+  open "$URL"
+fi
+echo "duet: $URL (app window)"
