@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>duet — architecture playground</title>
+<style>
+  :root{
+    --bg:#0a0e16; --panel:#0f1523; --panel2:#121a29; --line:#1b2537; --line2:#243049;
+    --ink:#c6d0de; --dim:#6f7d92; --faint:#45536a;
+    --amber:#e8b862; --teal:#3fd3bf; --purple:#a78bfa; --good:#59c07f;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1280px;margin:0 auto;padding:0 18px 120px}
+
+  header{display:flex;align-items:baseline;gap:14px;padding:18px 0 6px;flex-wrap:wrap}
+  header h1{margin:0;font:700 19px var(--mono);letter-spacing:.4px}
+  header h1 .a{color:var(--amber)} header h1 .t{color:var(--teal)}
+  header .sub{color:var(--dim);font-size:12.5px}
+  .legend{margin-left:auto;display:flex;gap:14px;font:11px var(--mono);color:var(--dim)}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:baseline}
+
+  .presets{display:flex;gap:8px;align-items:center;padding:8px 0 14px;font:11.5px var(--mono);color:var(--dim);flex-wrap:wrap}
+  .presets button{font:11.5px var(--mono);color:var(--ink);background:var(--panel2);border:1px solid var(--line);
+    border-radius:7px;padding:6px 11px;cursor:pointer}
+  .presets button:hover{border-color:var(--dim)}
+  .presets button.on{border-color:var(--teal);color:var(--teal)}
+
+  .main{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:16px;align-items:start}
+  @media (max-width:980px){ .main{grid-template-columns:1fr} .side{position:static} }
+
+  /* ---- diagram ---- */
+  .board{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;overflow-x:auto}
+  .board h2, .side h2{margin:0 0 10px;font:11px var(--mono);letter-spacing:1.2px;text-transform:uppercase;color:var(--dim)}
+  .diagram{position:relative;min-width:820px}
+  .cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:64px;position:relative;z-index:1}
+  .colhead{font:10.5px var(--mono);letter-spacing:1px;text-transform:uppercase;color:var(--faint);
+    padding-bottom:8px;margin-bottom:10px;border-bottom:1px dashed var(--line)}
+  .col{display:flex;flex-direction:column;gap:18px}
+  .node{position:relative;background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--c,#63708a);
+    border-radius:10px;padding:10px 12px;cursor:pointer;transition:border-color .15s, box-shadow .15s, transform .12s}
+  .node:hover{border-color:var(--line2);border-left-color:var(--c)}
+  .node.sel{border-color:var(--c);box-shadow:0 0 0 2px color-mix(in srgb,var(--c) 30%,transparent)}
+  .node.pulse{box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 45%,transparent);transform:scale(1.02)}
+  .node b{display:block;font:600 13px var(--sans)}
+  .node span{display:block;font:11px var(--mono);color:var(--dim);margin-top:2px}
+  .node .flag{position:absolute;top:-7px;right:-7px;width:18px;height:18px;border-radius:50%;display:none;
+    place-items:center;font-size:10px;background:var(--panel);border:1px solid var(--line2)}
+  .node .flag.show{display:grid}
+  svg.wires{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+  .wire{fill:none;stroke-width:1.5;opacity:.6}
+  .wire.lit{opacity:1;stroke-width:2.5;filter:drop-shadow(0 0 4px currentColor)}
+  .wlabel{font:9.5px var(--mono);fill:var(--faint)}
+  .dot{position:absolute;width:10px;height:10px;border-radius:50%;z-index:2;pointer-events:none;display:none;
+    box-shadow:0 0 10px 2px currentColor}
+
+  /* ---- flows ---- */
+  .flows{margin-top:16px;display:grid;gap:8px}
+  .flow{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;padding:9px 12px}
+  .flow button{flex:0 0 auto;width:30px;height:30px;border-radius:8px;border:1px solid var(--line2);cursor:pointer;
+    background:transparent;color:var(--fc);font-size:13px;display:grid;place-items:center}
+  .flow button:hover{border-color:var(--fc)}
+  .flow .fname{font:600 12.5px var(--mono);color:var(--fc);flex:0 0 200px}
+  .flow .fdesc{font:12px var(--sans);color:var(--dim)}
+  .flow .budget{margin-left:auto;font:10.5px var(--mono);color:var(--fc);border:1px solid var(--line2);
+    border-radius:20px;padding:2px 9px;white-space:nowrap}
+
+  /* ---- side panel ---- */
+  .side{position:sticky;top:14px;display:flex;flex-direction:column;gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .chip{display:inline-block;font:10px var(--mono);letter-spacing:.5px;color:var(--dim);
+    border:1px solid var(--line2);border-radius:20px;padding:2px 9px;margin-right:6px}
+  #d-name{margin:8px 0 2px;font:650 16px var(--sans)}
+  #d-sub{font:11.5px var(--mono);color:var(--dim);margin-bottom:8px}
+  #d-role{font-size:13px;color:var(--ink);margin:0 0 10px}
+  .decision{border-left:3px solid var(--amber);background:color-mix(in srgb,var(--amber) 7%,transparent);
+    border-radius:0 8px 8px 0;padding:8px 11px;font-size:12.5px;color:var(--ink);margin-bottom:12px}
+  .decision b{color:var(--amber);font:600 10.5px var(--mono);letter-spacing:.8px;display:block;margin-bottom:2px}
+
+  .stances{display:flex;gap:6px;margin-bottom:8px}
+  .stances button{flex:1;font:12px var(--mono);padding:7px 4px;border-radius:8px;cursor:pointer;
+    background:transparent;border:1px solid var(--line2);color:var(--dim)}
+  .stances button:hover{border-color:var(--dim);color:var(--ink)}
+  .stances button.on-keep{background:color-mix(in srgb,var(--good) 16%,transparent);border-color:var(--good);color:var(--good)}
+  .stances button.on-change{background:color-mix(in srgb,var(--amber) 16%,transparent);border-color:var(--amber);color:var(--amber)}
+  .stances button.on-question{background:color-mix(in srgb,var(--purple) 16%,transparent);border-color:var(--purple);color:var(--purple)}
+  textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--ink);
+    font:12.5px var(--sans);padding:8px 10px;resize:vertical;min-height:54px}
+  textarea:focus{outline:none;border-color:var(--dim)}
+
+  .prio{list-style:none;margin:0;padding:0}
+  .prio li{display:flex;gap:9px;align-items:center;padding:5px 0;cursor:pointer;font-size:13px}
+  .prio .box{width:15px;height:15px;border-radius:4px;border:1.5px solid var(--line2);display:grid;place-items:center;
+    font:9px var(--mono);color:#06110f;flex:0 0 auto}
+  .prio li.on .box{background:var(--teal);border-color:var(--teal)}
+  .prio .m{margin-left:auto;font:9.5px var(--mono);color:var(--faint)}
+  .fbsum{font:11.5px var(--mono);color:var(--dim);margin-top:4px}
+  .fbsum div{padding:2px 0}
+  .fbsum .k{color:var(--good)} .fbsum .c{color:var(--amber)} .fbsum .q{color:var(--purple)}
+
+  /* ---- prompt bar ---- */
+  .promptbar{position:fixed;left:0;right:0;bottom:0;background:color-mix(in srgb,var(--panel) 92%,transparent);
+    backdrop-filter:blur(8px);border-top:1px solid var(--line);padding:10px 18px;z-index:10}
+  .promptbar .inner{max-width:1280px;margin:0 auto;display:flex;gap:12px;align-items:flex-start}
+  #prompt{flex:1;font:12px/1.5 var(--mono);color:var(--ink);background:var(--panel2);border:1px solid var(--line);
+    border-radius:9px;padding:9px 12px;max-height:110px;overflow-y:auto;white-space:pre-wrap}
+  #copy{flex:0 0 auto;font:600 12px var(--mono);background:var(--teal);color:#06110f;border:0;border-radius:9px;
+    padding:10px 16px;cursor:pointer}
+  #copy:hover{filter:brightness(1.08)}
+  @media (prefers-reduced-motion: reduce){ .node.pulse{transform:none} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="a">duet</span> <span class="t">◧◨</span> — what we built</h1>
+    <span class="sub">click a component · play a flow · flag anything · copy the feedback prompt back to Claude</span>
+    <span class="legend">
+      <span><i style="background:var(--amber)"></i>text surface</span>
+      <span><i style="background:var(--teal)"></i>canvas surface</span>
+      <span><i style="background:var(--purple)"></i>session link</span>
+    </span>
+  </header>
+
+  <div class="presets" id="presets">
+    <span>priority presets:</span>
+    <button data-p="daily">daily driver</button>
+    <button data-p="agent">agent-first</button>
+    <button data-p="product">make it a product</button>
+    <button data-p="clear">clear</button>
+  </div>
+
+  <div class="main">
+    <section>
+      <div class="board">
+        <h2>Architecture — one keystroke path, one render path, one link</h2>
+        <div class="diagram" id="diagram">
+          <svg class="wires" id="wires"></svg>
+          <div class="dot" id="dot"></div>
+          <div class="cols">
+            <div class="col" id="col-browser"><div class="colhead">Browser — what you see</div></div>
+            <div class="col" id="col-server"><div class="colhead">Server — node, 127.0.0.1 only</div></div>
+            <div class="col" id="col-disk"><div class="colhead">Disk — the protocol</div></div>
+          </div>
+        </div>
+        <div class="flows" id="flows"></div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="card" id="detail">
+        <h2>Component</h2>
+        <div id="d-chips"></div>
+        <div id="d-name"></div>
+        <div id="d-sub"></div>
+        <p id="d-role"></p>
+        <div class="decision"><b>DESIGN DECISION</b><span id="d-decision"></span></div>
+        <div class="stances" id="stances">
+          <button data-s="keep">✓ keep</button>
+          <button data-s="change">✎ change</button>
+          <button data-s="question">? question</button>
+        </div>
+        <textarea id="note" placeholder="optional note — what should change / what's unclear…"></textarea>
+        <div class="fbsum" id="fbsum"></div>
+      </div>
+
+      <div class="card">
+        <h2>What should we build next?</h2>
+        <ul class="prio" id="prio"></ul>
+      </div>
+
+      <div class="card">
+        <h2>Anything else</h2>
+        <textarea id="general" placeholder="overall direction, missing pieces, wild ideas…"></textarea>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="promptbar"><div class="inner">
+  <div id="prompt"></div>
+  <button id="copy">Copy</button>
+</div></div>
+
+<script>
+(function(){
+"use strict";
+var $=function(s){return document.querySelector(s)};
+var C={amber:"#e8b862",teal:"#3fd3bf",purple:"#a78bfa",neutral:"#63708a"};
+
+/* ---------- data ---------- */
+var COMPONENTS=[
+ {id:"wm",col:"browser",color:"neutral",name:"Tiling window manager",sub:"BSP split tree · public/app.js",
+  role:"Every pane is a leaf in a binary split tree. Split right/down (choosing terminal-or-render + session), flip a seam ⇄/⇅, drag it to resize, drag a grip to swap panes, hide to tray. The tree persists to localStorage and restores on reload.",
+  decision:"Layout verbs live on the seam — the same divider resizes (drag) and flips orientation (hover button). Panes stay clean; one object, two gestures."},
+ {id:"termpane",col:"browser",color:"amber",name:"Terminal pane",sub:"xterm.js + WebGL renderer",
+  role:"A real shell. Your keystrokes leave as raw binary WebSocket frames (TextEncoder — no JSON, no base64) and PTY output paints through xterm's WebGL renderer. Resize is rAF-debounced into a single PTY resize.",
+  decision:"Nothing on the data path but bytes: zero serialization, zero logging, WebGL painting. This is the zero-latency budget."},
+ {id:"renderpane",col:"browser",color:"teal",name:"Render pane",sub:"live HTML cards · sandboxed iframes",
+  role:"A live view of its session's canvas. Each card is an iframe (srcdoc, allow-scripts only — never allow-same-origin). New and changed cards flash and update in place; deletes remove them.",
+  decision:"A render pane is a subscription, not a container. Two render panes on one session mirror each other because state lives in the session, not the pane."},
+ {id:"session",col:"browser",color:"purple",name:"Session",sub:"the link — color = identity",
+  role:"Groups terminals and render panes around one canvas. The colored badge on every pane is its session; click it to reassign. Focusing a pane lights up its whole session group.",
+  decision:"Pane type (term/render) is carried by form; linkage is carried by color. You can read the wiring of any screen at a glance."},
+ {id:"termws",col:"server",color:"amber",name:"/term bridge",sub:"binary WS ⇄ PTY · @lydell/node-pty",
+  role:"Spawns your login shell per connection with DUET_SESSION and DUET_CANVAS injected into its environment. Binary frames both directions, compression off, TCP_NODELAY on, and high/low-watermark flow control that pauses the PTY when a command floods output.",
+  decision:"The server never parses terminal traffic — bytes in, bytes out. Flow control means `yes` or a giant log can't balloon memory."},
+ {id:"canvasws",col:"server",color:"teal",name:"/canvas feed",sub:"snapshot + FSEvents watch",
+  role:"On connect it sends a full snapshot of the session's cards, then a refcounted chokidar watcher pushes every card add / in-place update / removal as JSON over the open socket (<100ms from file write to pixels).",
+  decision:"Snapshot-then-stream makes reconnects idempotent — a page refresh never loses cards."},
+ {id:"security",col:"server",color:"neutral",name:"Security layer",sub:"the review fixes",
+  role:"Origin/Host allowlist on the WebSocket upgrade (a /term socket is a shell — without this, any website you visit could drive it: drive-by RCE, caught in adversarial review). Plus 127.0.0.1 bind only, session-id regex, filename allowlist, sandboxed card iframes.",
+  decision:"Treat the WS handshake as a security boundary, not plumbing."},
+ {id:"canvasdir",col:"disk",color:"teal",name:"Canvas directory",sub:"~/.duet/canvas/<session>/",
+  role:"THE protocol. Write a self-contained .html file → a card renders. Overwrite the same filename → the card updates in place. Delete → it disappears. <title> sets the card title.",
+  decision:"The canvas is a directory: any language, any tool, zero SDK. This chat rendered into your window by writing a file."},
+ {id:"producers",col:"disk",color:"purple",name:"Producers",sub:"shell · claude · any process",
+  role:"Whatever writes HTML: a shell one-liner ($DUET_CANVAS is pre-set in every pane), claude running inside a pane (inherits it automatically), a python script, a cron — or an outside process like the Claude session that built all this.",
+  decision:"No SDK means every tool you already have is already integrated."}
+];
+
+var WIRES=[
+ {from:"termpane",to:"termws",color:"amber",off:-7,label:"keys · binary"},
+ {from:"termws",to:"termpane",color:"amber",off:7,label:"output · binary"},
+ {from:"termws",to:"canvasdir",color:"amber",dash:true,label:"spawn: $DUET_CANVAS env"},
+ {from:"producers",to:"canvasdir",color:"teal",label:"write .html"},
+ {from:"canvasdir",to:"canvasws",color:"teal",label:"FSEvents"},
+ {from:"canvasws",to:"renderpane",color:"teal",label:"card push"},
+ {from:"session",to:"termpane",color:"purple",dash:true},
+ {from:"session",to:"renderpane",color:"purple",dash:true}
+];
+
+var FLOWS=[
+ {id:"key",color:"amber",name:"① keystroke round-trip",budget:"< 5 ms",
+  desc:"you type → binary frame → PTY → shell echoes → binary frame → WebGL paint",
+  path:["termpane","termws","termpane"]},
+ {id:"render",color:"teal",name:"② render path",budget:"< 100 ms",
+  desc:"any process writes $DUET_CANVAS/x.html → FSEvents → push → card mounts / updates in place",
+  path:["producers","canvasdir","canvasws","renderpane"]},
+ {id:"agent",color:"purple",name:"③ the full agent loop",budget:"text + canvas",
+  desc:"you prompt claude in a terminal pane; its words stay as text, its charts land as cards beside you",
+  path:["termpane","termws","canvasdir","canvasws","renderpane"]}
+];
+
+var PRIORITIES=[
+ {id:"kbd",m:"M1",label:"keyboard splits & pane navigation (cmd+d…)"},
+ {id:"zoom",m:"M1",label:"pane zoom (temporarily maximize one pane)"},
+ {id:"config",m:"M1",label:"config file + session rename"},
+ {id:"cli",m:"M2",label:"`duet` CLI + text handles (jump text → card)"},
+ {id:"skill",m:"M2",label:"Claude Code skill: auto-discover the canvas"},
+ {id:"backchannel",m:"M3",label:"interactive cards: buttons/forms post back to the terminal"},
+ {id:"tauri",m:"M4",label:"package as a real desktop app (Tauri)"},
+ {id:"remote",m:"M5",label:"remote sessions over SSH + share links"}
+];
+var PRESETS={daily:["kbd","zoom","config"],agent:["cli","skill","backchannel"],product:["tauri","kbd","remote"],clear:[]};
+
+/* ---------- state ---------- */
+var state={selected:"canvasdir",feedback:{},priorities:{},general:"",preset:null};
+COMPONENTS.forEach(function(c){state.feedback[c.id]={stance:null,note:""}});
+
+/* ---------- build diagram ---------- */
+var byId={};
+COMPONENTS.forEach(function(c){
+  byId[c.id]=c;
+  var n=document.createElement("div");
+  n.className="node"; n.id="n-"+c.id; n.style.setProperty("--c",C[c.color]);
+  n.innerHTML="<b>"+c.name+"</b><span>"+c.sub+"</span><span class='flag' id='flag-"+c.id+"'></span>";
+  n.addEventListener("click",function(){state.selected=c.id;updateAll();});
+  $("#col-"+c.col).appendChild(n);
+});
+
+/* wires (drawn after layout) */
+var svg=$("#wires");
+function anchor(el,side){
+  var d=$("#diagram").getBoundingClientRect(), r=el.getBoundingClientRect();
+  var x=r.left-d.left, y=r.top-d.top;
+  if(side==="l") return [x, y+r.height/2];
+  if(side==="r") return [x+r.width, y+r.height/2];
+  if(side==="t") return [x+r.width/2, y];
+  return [x+r.width/2, y+r.height];
+}
+function drawWires(){
+  var d=$("#diagram");
+  svg.setAttribute("viewBox","0 0 "+d.offsetWidth+" "+d.offsetHeight);
+  svg.innerHTML="";
+  WIRES.forEach(function(w,i){
+    var a=$("#n-"+w.from), b=$("#n-"+w.to);
+    var sameCol = byId[w.from].col===byId[w.to].col;
+    var p1,p2;
+    if(sameCol){ // vertical
+      var down = a.getBoundingClientRect().top < b.getBoundingClientRect().top;
+      p1=anchor(a,down?"b":"t"); p2=anchor(b,down?"t":"b");
+    } else {
+      var ltr = a.getBoundingClientRect().left < b.getBoundingClientRect().left;
+      p1=anchor(a,ltr?"r":"l"); p2=anchor(b,ltr?"l":"r");
+    }
+    var off=w.off||0; p1[1]+=off; p2[1]+=off;
+    var mx=(p1[0]+p2[0])/2;
+    var path=document.createElementNS("http://www.w3.org/2000/svg","path");
+    var dcurve = sameCol
+      ? "M"+p1[0]+" "+p1[1]+" C "+(p1[0]-26)+" "+(p1[1]+p2[1])/2+", "+(p2[0]-26)+" "+(p1[1]+p2[1])/2+", "+p2[0]+" "+p2[1]
+      : "M"+p1[0]+" "+p1[1]+" C "+mx+" "+p1[1]+", "+mx+" "+p2[1]+", "+p2[0]+" "+p2[1];
+    path.setAttribute("d",dcurve);
+    path.setAttribute("class","wire"); path.setAttribute("id","wire-"+i);
+    path.style.stroke=C[w.color]; path.style.color=C[w.color];
+    if(w.dash) path.setAttribute("stroke-dasharray","4 4");
+    svg.appendChild(path);
+    if(w.label){
+      var t=document.createElementNS("http://www.w3.org/2000/svg","text");
+      t.setAttribute("class","wlabel");
+      t.setAttribute("x",(p1[0]+p2[0])/2); t.setAttribute("y",(p1[1]+p2[1])/2 - 5);
+      t.setAttribute("text-anchor","middle"); t.textContent=w.label;
+      svg.appendChild(t);
+    }
+  });
+}
+
+/* ---------- flow animation ---------- */
+var dot=$("#dot"), animating=false;
+function playFlow(f){
+  if(animating) return; animating=true;
+  var pts=f.path.map(function(id){var el=$("#n-"+id);var r=el.getBoundingClientRect(),d=$("#diagram").getBoundingClientRect();
+    return [r.left-d.left+r.width/2, r.top-d.top+r.height/2];});
+  var segs=[]; for(var i=0;i<pts.length-1;i++){var dx=pts[i+1][0]-pts[i][0],dy=pts[i+1][1]-pts[i][1];
+    segs.push({a:pts[i],b:pts[i+1],len:Math.hypot(dx,dy)});}
+  var total=segs.reduce(function(s,x){return s+x.len},0), dur=Math.max(1200, total*2.2);
+  dot.style.display="block"; dot.style.background=C[f.color]; dot.style.color=C[f.color];
+  f.path.forEach(function(id,i){ setTimeout(function(){ var n=$("#n-"+id); n.classList.add("pulse");
+    setTimeout(function(){n.classList.remove("pulse")},480); }, dur*(i/(f.path.length))); });
+  var t0=null;
+  function step(ts){
+    if(!t0)t0=ts; var p=Math.min(1,(ts-t0)/dur), distTarget=p*total, acc=0, x=0, y=0;
+    for(var i=0;i<segs.length;i++){ var s=segs[i];
+      if(acc+s.len>=distTarget){ var lp=(distTarget-acc)/s.len;
+        x=s.a[0]+(s.b[0]-s.a[0])*lp; y=s.a[1]+(s.b[1]-s.a[1])*lp; break; }
+      acc+=s.len; x=s.b[0]; y=s.b[1]; }
+    dot.style.left=(x-5)+"px"; dot.style.top=(y-5)+"px";
+    if(p<1) requestAnimationFrame(step); else { dot.style.display="none"; animating=false; }
+  }
+  requestAnimationFrame(step);
+}
+FLOWS.forEach(function(f){
+  var row=document.createElement("div"); row.className="flow"; row.style.setProperty("--fc",C[f.color]);
+  row.innerHTML="<button aria-label='play'>▶</button><span class='fname'>"+f.name+"</span>"+
+    "<span class='fdesc'>"+f.desc+"</span><span class='budget'>"+f.budget+"</span>";
+  row.querySelector("button").addEventListener("click",function(){playFlow(f)});
+  $("#flows").appendChild(row);
+});
+
+/* ---------- priorities ---------- */
+PRIORITIES.forEach(function(p){
+  var li=document.createElement("li");
+  li.innerHTML="<span class='box'></span><span>"+p.label+"</span><span class='m'>"+p.m+"</span>";
+  li.addEventListener("click",function(){ state.priorities[p.id]=!state.priorities[p.id]; state.preset=null; updateAll(); });
+  li.id="prio-"+p.id;
+  $("#prio").appendChild(li);
+});
+document.querySelectorAll("#presets button").forEach(function(b){
+  b.addEventListener("click",function(){
+    var ids=PRESETS[b.dataset.p]||[];
+    state.priorities={}; ids.forEach(function(id){state.priorities[id]=true});
+    state.preset=b.dataset.p==="clear"?null:b.dataset.p;
+    updateAll();
+  });
+});
+
+/* ---------- feedback controls ---------- */
+document.querySelectorAll("#stances button").forEach(function(b){
+  b.addEventListener("click",function(){
+    var fb=state.feedback[state.selected];
+    fb.stance = fb.stance===b.dataset.s ? null : b.dataset.s;
+    updateAll();
+  });
+});
+$("#note").addEventListener("input",function(){ state.feedback[state.selected].note=this.value; updatePrompt(); updateFlags(); });
+$("#general").addEventListener("input",function(){ state.general=this.value; updatePrompt(); });
+
+/* ---------- render ---------- */
+var STANCE_ICON={keep:"✓",change:"✎",question:"?"};
+function updateDetail(){
+  var c=byId[state.selected], fb=state.feedback[c.id];
+  $("#d-chips").innerHTML="<span class='chip'>"+c.col+"</span><span class='chip' style='color:"+C[c.color]+";border-color:"+C[c.color]+"'>"+
+    (c.color==="amber"?"text surface":c.color==="teal"?"canvas surface":c.color==="purple"?"session link":"structure")+"</span>";
+  $("#d-name").textContent=c.name; $("#d-sub").textContent=c.sub;
+  $("#d-role").textContent=c.role; $("#d-decision").textContent=c.decision;
+  document.querySelectorAll("#stances button").forEach(function(b){
+    b.className = fb.stance===b.dataset.s ? "on-"+b.dataset.s : "";
+  });
+  $("#note").value=fb.note;
+  document.querySelectorAll(".node").forEach(function(n){ n.classList.toggle("sel", n.id==="n-"+state.selected); });
+}
+function updateFlags(){
+  COMPONENTS.forEach(function(c){
+    var fb=state.feedback[c.id], f=$("#flag-"+c.id);
+    var has=fb.stance||fb.note;
+    f.classList.toggle("show",!!has);
+    if(has){ f.textContent=STANCE_ICON[fb.stance]||"…";
+      f.style.color = fb.stance==="keep"?"var(--good)":fb.stance==="change"?"var(--amber)":fb.stance==="question"?"var(--purple)":"var(--dim)"; }
+  });
+  var sum=[], cls={keep:"k",change:"c",question:"q"};
+  COMPONENTS.forEach(function(c){ var fb=state.feedback[c.id];
+    if(fb.stance||fb.note) sum.push("<div class='"+(cls[fb.stance]||"")+"'>"+(STANCE_ICON[fb.stance]||"·")+" "+c.name+"</div>"); });
+  $("#fbsum").innerHTML = sum.length? "<div style='margin-bottom:2px;color:var(--faint)'>flagged:</div>"+sum.join("") : "";
+}
+function updatePrio(){
+  PRIORITIES.forEach(function(p){ $("#prio-"+p.id).classList.toggle("on",!!state.priorities[p.id]); });
+  document.querySelectorAll("#presets button").forEach(function(b){ b.classList.toggle("on",state.preset===b.dataset.p); });
+}
+function updatePrompt(){
+  var parts=[];
+  var verbs={keep:"KEEP",change:"CHANGE",question:"QUESTION"};
+  COMPONENTS.forEach(function(c){ var fb=state.feedback[c.id];
+    if(fb.stance||fb.note){
+      parts.push("- "+(verbs[fb.stance]||"NOTE")+" · "+c.name+(fb.note?" — "+fb.note.trim():""));
+    }});
+  var pr=PRIORITIES.filter(function(p){return state.priorities[p.id]}).map(function(p){return p.label+" ("+p.m+")"});
+  var out="Feedback on the duet architecture after working through the visual map:\n";
+  if(!parts.length && !pr.length && !state.general.trim()){
+    out+="(nothing flagged yet — click components to inspect them, mark keep/change/question, pick priorities, then copy this.)";
+  } else {
+    if(parts.length) out+=parts.join("\n")+"\n";
+    if(pr.length) out+="Build next: "+pr.join("; ")+".\n";
+    if(state.general.trim()) out+="Overall: "+state.general.trim();
+  }
+  $("#prompt").textContent=out.trim();
+}
+function updateAll(){ updateDetail(); updateFlags(); updatePrio(); updatePrompt(); }
+
+/* ---------- copy ---------- */
+$("#copy").addEventListener("click",function(){
+  var txt=$("#prompt").textContent, b=this;
+  function ok(){ b.textContent="Copied!"; setTimeout(function(){b.textContent="Copy"},1400); }
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(ok,fallback); } else fallback();
+  function fallback(){ var ta=document.createElement("textarea"); ta.value=txt; document.body.appendChild(ta);
+    ta.select(); try{document.execCommand("copy");ok();}catch(e){} document.body.removeChild(ta); }
+});
+
+/* ---------- init ---------- */
+updateAll();
+requestAnimationFrame(drawWires);
+window.addEventListener("resize",drawWires);
+if(window.ResizeObserver) new ResizeObserver(drawWires).observe($("#diagram"));
+})();
+</script>
+</body>
+</html>

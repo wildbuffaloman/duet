@@ -56,7 +56,7 @@
   }
   function makeWindow(type, sid){
     var id = "w" + (++winSeq);
-    windows[id] = { id:id, type:type, session:sid };
+    windows[id] = { id:id, type:type, session:sid, view:"focus" }; // view only matters for render panes
     return windows[id];
   }
   function labelOf(w){ return "session " + w.session + " · " + (w.type === "term" ? "terminal" : "render"); }
@@ -67,7 +67,7 @@
       var snap = {
         v:1, winSeq:winSeq, sessSeq:sessSeq, palIdx:palIdx,
         sessions:Object.keys(sessions).map(function(id){ var s = sessions[id]; return { id:s.id, name:s.name, base:s.base }; }),
-        windows:Object.keys(windows).map(function(id){ var w = windows[id]; return { id:w.id, type:w.type, session:w.session }; }),
+        windows:Object.keys(windows).map(function(id){ var w = windows[id]; return { id:w.id, type:w.type, session:w.session, view:w.view === "list" ? "list" : "focus" }; }),
         hidden:hidden.slice(), tree:tree, focused:focused
       };
       localStorage.setItem(LS_KEY, JSON.stringify(snap));
@@ -92,7 +92,7 @@
         if(s && typeof s.id === "string" && SID_RE.test(s.id) && typeof s.base === "string" && COLOR_RE.test(s.base)) sess[s.id] = { id:s.id, name:String(s.name || s.id), base:s.base };
       });
       (st.windows || []).forEach(function(w){
-        if(w && typeof w.id === "string" && sess[w.session]) wins[w.id] = { id:w.id, type:w.type === "render" ? "render" : "term", session:w.session };
+        if(w && typeof w.id === "string" && sess[w.session]) wins[w.id] = { id:w.id, type:w.type === "render" ? "render" : "term", session:w.session, view:w.view === "list" ? "list" : "focus" };
       });
       var leaves = visibleWinIds(st.tree), seen = {};
       for(var i = 0; i < leaves.length; i++){
@@ -581,59 +581,192 @@
   }
   function flash(c){ c.classList.remove("flash"); void c.offsetWidth; c.classList.add("flash"); setTimeout(function(){ c.classList.remove("flash"); }, 900); }
   function createRenderBody(w){
+    if(w.view !== "list") w.view = "focus"; // default: one card owns the whole pane
+    var body = el("div", "rp-body");
+    var cards = [];        // canonical card state, mtime ascending — both views render from this
+    var pin = null;        // card id the user pinned in focus view; null = follow latest
+    var shownId = null, shownMtime = null;
+    var menuEl = null;
+
+    /* -- bar (focus navigation + view toggle) -- */
+    var bar = el("div", "rp-bar");
+    var btnPrev = el("button", "rp-nav", "‹"); btnPrev.title = "previous card";
+    var btnNext = el("button", "rp-nav", "›"); btnNext.title = "next card";
+    var title = el("button", "rp-title", ""); title.title = "choose card";
+    var pos = el("span", "rp-pos", "");
+    var chipNew = el("button", "rp-new", ""); chipNew.title = "jump to the newest card";
+    var followBtn = el("button", "rp-follow", "↦ latest"); followBtn.title = "resume following the newest card";
+    var spacer = el("span", "rp-spacer", "");
+    var viewBtn = el("button", "rp-view", ""); // label set in syncBar
+    bar.append(btnPrev, title, pos, btnNext, chipNew, spacer, followBtn, viewBtn);
+
+    /* -- the two content surfaces -- */
+    var focusWrap = el("div", "rp-focus");
     var scroll = el("div", "canvas-scroll");
     scroll.dataset.rw = w.id; scroll.dataset.sid = w.session;
+    body.append(bar, focusWrap, scroll);
+
     function emptyState(){
       return el("div", "empty",
         '<div class="big">◪</div>' +
         '<div>session ' + esc(w.session) + ' canvas is empty —<br>write HTML to <code>$DUET_CANVAS</code> in a linked terminal.</div>' +
         '<div><code>echo "&lt;h1&gt;hola&lt;/h1&gt;" &gt; $DUET_CANVAS/hola.html</code></div>');
     }
-    scroll.appendChild(emptyState());
-    function cardIn(id){ return scroll.querySelector('.card[data-card="' + cssEsc(String(id)) + '"]'); }
-    var sub = {
-      snapshot:function(cards){
-        // skip the re-render if nothing changed (reconnect snapshots are usually identical)
-        var have = scroll.querySelectorAll(".card");
-        if(have.length === cards.length){
-          var same = true;
-          for(var i = 0; i < cards.length; i++){
-            if(have[i].dataset.card !== String(cards[i].id) || have[i].dataset.mtime !== String(cards[i].mtime)){ same = false; break; }
-          }
-          if(same) return;
-        }
-        var st = scroll.scrollTop;
-        scroll.innerHTML = "";
-        if(!cards.length){ scroll.appendChild(emptyState()); return; }
-        cards.forEach(function(cd){
-          var c = buildCardEl(cd); c.dataset.mtime = String(cd.mtime); c.style.animation = "none";
-          scroll.appendChild(c);
+
+    /* -- canonical card state -- */
+    function upsert(cd){
+      for(var i = 0; i < cards.length; i++){ if(cards[i].id === cd.id){ cards.splice(i, 1); break; } }
+      cards.push(cd);
+      cards.sort(function(a, b){ return a.mtime - b.mtime; });
+    }
+    function findCard(id){ for(var i = 0; i < cards.length; i++) if(cards[i].id === id) return cards[i]; return null; }
+    function currentCard(){
+      if(!cards.length) return null;
+      if(pin !== null){ var c = findCard(pin); if(c) return c; pin = null; }
+      return cards[cards.length - 1]; // latest write owns the screen
+    }
+
+    /* -- focus view -- */
+    function focusShow(force){
+      var cd = currentCard();
+      if(!cd){
+        focusWrap.innerHTML = ""; focusWrap.appendChild(emptyState());
+        shownId = shownMtime = null; syncBar(); return;
+      }
+      if(!force && shownId === cd.id && shownMtime === cd.mtime){ syncBar(); return; }
+      var frame = document.createElement("iframe");
+      frame.className = "rp-frame";
+      frame.setAttribute("sandbox", "allow-scripts");
+      frame.srcdoc = cd.html || ""; // no SIZER: the pane sizes the frame, content scrolls inside it
+      focusWrap.innerHTML = "";
+      focusWrap.appendChild(frame);
+      shownId = cd.id; shownMtime = cd.mtime;
+      focusWrap.classList.remove("flash"); void focusWrap.offsetWidth; focusWrap.classList.add("flash");
+      syncBar();
+    }
+    function syncBar(){
+      var focusMode = w.view !== "list";
+      bar.style.display = "flex";
+      focusWrap.style.display = focusMode ? "" : "none";
+      scroll.style.display = focusMode ? "none" : "";
+      viewBtn.textContent = focusMode ? "☰ list" : "⛶ focus";
+      viewBtn.title = focusMode ? "show all cards as a list" : "one card fills the pane";
+      var cd = currentCard(), idx = cd ? cards.indexOf(cd) : -1;
+      var focusCtls = focusMode && cards.length > 0;
+      btnPrev.style.display = btnNext.style.display = title.style.display = pos.style.display = focusCtls ? "" : "none";
+      if(focusCtls){
+        title.textContent = cd.title || cd.id;
+        pos.textContent = (idx + 1) + "/" + cards.length;
+        btnPrev.disabled = idx <= 0;
+        btnNext.disabled = idx >= cards.length - 1;
+      }
+      followBtn.style.display = (focusMode && pin !== null) ? "" : "none";
+      if(!(focusMode && pin !== null)) hideNew(); // chip only makes sense while pinned
+    }
+    function showNew(cd){ chipNew.textContent = "● " + (cd.title || cd.id); chipNew.style.display = ""; }
+    function hideNew(){ chipNew.style.display = "none"; }
+    function step(delta){
+      var cd = currentCard(); if(!cd) return;
+      var idx = cards.indexOf(cd) + delta;
+      if(idx < 0 || idx >= cards.length) return;
+      pin = (idx === cards.length - 1) ? null : cards[idx].id; // stepping onto the newest resumes following
+      hideNew(); focusShow();
+    }
+    btnPrev.addEventListener("click", function(e){ e.stopPropagation(); step(-1); });
+    btnNext.addEventListener("click", function(e){ e.stopPropagation(); step(1); });
+    followBtn.addEventListener("click", function(e){ e.stopPropagation(); pin = null; hideNew(); focusShow(); });
+    chipNew.addEventListener("click", function(e){ e.stopPropagation(); pin = null; hideNew(); focusShow(); });
+    viewBtn.addEventListener("click", function(e){
+      e.stopPropagation();
+      w.view = (w.view === "list") ? "focus" : "list";
+      persist();
+      if(w.view === "list"){ listRebuild(); } else { focusShow(true); }
+      syncBar();
+    });
+
+    /* card chooser menu (reuses .pop styling) */
+    function closeMenu(){ if(menuEl){ menuEl.remove(); menuEl = null; document.removeEventListener("pointerdown", onMenuDown, true); } }
+    function onMenuDown(e){ if(menuEl && !menuEl.contains(e.target)) closeMenu(); }
+    title.addEventListener("click", function(e){
+      e.stopPropagation();
+      if(menuEl){ closeMenu(); return; }
+      menuEl = el("div", "pop");
+      menuEl.appendChild(el("div", "ph", "cards — newest first"));
+      var follow = el("div", "prow rp-menu-row", '<span class="nm">● follow latest</span>');
+      follow.addEventListener("click", function(){ pin = null; hideNew(); closeMenu(); focusShow(); });
+      menuEl.appendChild(follow);
+      cards.slice().reverse().forEach(function(cd){
+        var row = el("div", "prow rp-menu-row",
+          '<span class="nm">' + (cd.id === (currentCard() || {}).id ? "◉ " : "◪ ") + esc(cd.title || cd.id) + '</span>');
+        row.addEventListener("click", function(){
+          pin = (cd === cards[cards.length - 1]) ? null : cd.id;
+          hideNew(); closeMenu(); focusShow();
         });
-        scroll.scrollTop = st;
+        menuEl.appendChild(row);
+      });
+      document.body.appendChild(menuEl);
+      var r = title.getBoundingClientRect();
+      menuEl.style.left = Math.max(8, Math.min(r.left, window.innerWidth - menuEl.offsetWidth - 8)) + "px";
+      menuEl.style.top = (r.bottom + 4) + "px";
+      setTimeout(function(){ document.addEventListener("pointerdown", onMenuDown, true); }, 0);
+    });
+
+    /* -- list view (unchanged behavior, rendered from the canonical array) -- */
+    function cardIn(id){ return scroll.querySelector('.card[data-card="' + cssEsc(String(id)) + '"]'); }
+    function listRebuild(){
+      scroll.innerHTML = "";
+      if(!cards.length){ scroll.appendChild(emptyState()); return; }
+      cards.forEach(function(cd){
+        var c = buildCardEl(cd); c.dataset.mtime = String(cd.mtime); c.style.animation = "none";
+        scroll.appendChild(c);
+      });
+    }
+    function listCard(cd){
+      var em = scroll.querySelector(".empty"); if(em) em.remove();
+      var fresh = buildCardEl(cd); fresh.dataset.mtime = String(cd.mtime);
+      var old = cardIn(cd.id);
+      if(old){
+        var st = scroll.scrollTop;
+        fresh.style.animation = "none";
+        old.replaceWith(fresh);
+        scroll.scrollTop = st; // keep the reader where they were
+      } else {
+        scroll.appendChild(fresh);
+        fresh.scrollIntoView({ behavior:reduce ? "auto" : "smooth", block:"nearest" });
+      }
+      flash(fresh);
+    }
+
+    /* -- canvas subscription: update state, then whichever view is live -- */
+    var sub = {
+      snapshot:function(list){
+        cards = list.slice().sort(function(a, b){ return a.mtime - b.mtime; });
+        if(pin !== null && !findCard(pin)) pin = null;
+        if(w.view === "list") listRebuild(); else focusShow();
+        syncBar();
       },
-      card:function(cd, isNew){
-        var em = scroll.querySelector(".empty"); if(em) em.remove();
-        var fresh = buildCardEl(cd); fresh.dataset.mtime = String(cd.mtime);
-        var old = cardIn(cd.id);
-        if(old){
-          var st = scroll.scrollTop;
-          fresh.style.animation = "none";
-          old.replaceWith(fresh);
-          scroll.scrollTop = st; // keep the reader where they were
-        } else {
-          scroll.appendChild(fresh);
-          fresh.scrollIntoView({ behavior:reduce ? "auto" : "smooth", block:"nearest" });
-        }
-        flash(fresh);
+      card:function(cd){
+        upsert(cd);
+        if(w.view === "list"){ listCard(cd); }
+        else if(pin === null || cd.id === pin){ focusShow(); }
+        else showNew(cd); // pinned elsewhere: signal, don't yank the screen
+        syncBar();
       },
       remove:function(id){
-        var old = cardIn(id); if(old) old.remove();
-        if(!scroll.querySelector(".card")) scroll.appendChild(emptyState());
+        for(var i = 0; i < cards.length; i++){ if(cards[i].id === id){ cards.splice(i, 1); break; } }
+        if(pin === id) pin = null;
+        if(w.view === "list"){
+          var old = cardIn(id); if(old) old.remove();
+          if(!scroll.querySelector(".card")) scroll.appendChild(emptyState());
+        } else if(shownId === id){ focusShow(true); }
+        syncBar();
       }
     };
+    syncBar();
+    focusWrap.appendChild(emptyState());
     acquireCanvas(w.session, sub);
-    renderCtls[w.id] = { dispose:function(){ releaseCanvas(w.session, sub); } };
-    return scroll;
+    renderCtls[w.id] = { dispose:function(){ closeMenu(); releaseCanvas(w.session, sub); } };
+    return body;
   }
 
   /* ---------- split menu popover ---------- */
