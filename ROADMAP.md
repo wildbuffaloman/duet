@@ -56,6 +56,20 @@ Ship test: `claude` in a fresh duet pane renders a chart to the canvas and print
 
 ---
 
+## M2.5 — Editor pane spike (third pane type) — *investigation*
+
+Goal: decide whether panes grow a third type — `editor` — without duet becoming a worse IDE. The WM already treats pane type as data (`term | render` + in-place toggle), so the plumbing is cheap; this milestone is about validating the *product* shape, not the splits.
+
+- [ ] **Spike: CodeMirror 6 editor pane** — third case in the pane-body switch + split-popover option; file open/save via new scoped server endpoints; syntax highlighting, dirty indicator. Timebox it: if it doesn't feel duet-native in a week, kill it
+- [ ] **Session-linked follow mode ("watch the agent edit")** — the duet-native twist that justifies the pane type: an editor pane bound to a session auto-opens the file the agent most recently touched, reusing focus view's follow-latest/pin semantics. Validate this before generic editing — it's the differentiator
+- [ ] **Path-scoping decision before any file endpoint ships** — an editor pane widens the server from canvas-dir writes to arbitrary file read/write on localhost; define allowlisted roots per session (Origin check alone is not enough). Blocks the spike from merging
+- [ ] **Cheap alternative to beat**: "open in editor" handles (card/terminal chip that opens the file in Zed/VS Code) — if this captures most of the value, the editor pane loses the decision
+- [ ] **Explicit non-goals**: LSP, git UI, debugger, project-wide search — that's Zed/Cursor's company, not a pane type
+
+Decision test: after a week of the spike, "watch the agent edit" is something you actually leave open — otherwise ship the open-in-editor handle and close the milestone.
+
+---
+
 ## M3 — Interactivity back-channel
 
 Goal: cards become bidirectional UIs — a form in a card can drive the program that rendered it.
@@ -76,6 +90,7 @@ Ship test: a shell script renders a form, a human clicks a button in the card, t
 
 Goal: duet is an app you install, not a repo you clone.
 
+- [ ] **Competitive study gate: Wave Terminal (+ Warp blocks)** before packaging investment — Wave is the closest incumbent (open-source, block-based, inline rich previews, editor-ish blocks). Map feature overlap and confirm duet's wedge still holds: canvas-is-a-directory (zero SDK — renders whatever *your agent* writes, not widgets the vendor built), session-linked pane groups, agent-agnostic local-first. Output: a positioning note in `docs/` naming what duet deliberately won't build
 - [ ] Tauri shell (preferred — tiny, fast; Electron only if webview terminal perf disappoints in measurement): bundle server + UI, spawn node sidecar or port server to the Tauri process
 - [ ] Native menus + macOS keybinding conventions; dock icon, badge on canvas activity
 - [ ] Multi-window: each OS window is its own layout tree, sessions shared across windows
@@ -110,6 +125,7 @@ Ship test: attach to a remote box, run the demo there, watch cards land locally;
 3. **Session color = linkage.** The one visual invariant: anything sharing a session shares its color. Users should be able to answer "which canvas does this terminal feed?" at a glance.
 4. **Latency budget is law.** Terminal echo < 5ms local; file-write → pixels < 100ms. Any feature that would add work to the data path (compression, logging, JSON-wrapping PTY bytes) is rejected by default.
 5. **Local-first, private by default.** `127.0.0.1` bind, strict card sandbox, opt-in only for anything that leaves the machine.
+6. **Protect the wedge.** duet's differentiation vs Wave/Warp is protocol simplicity: any process renders by writing a file, and sessions link panes by color. New pane types and features must strengthen that wedge, not chase incumbent feature lists — when in doubt, ship the file-protocol version.
 
 ## Open questions
 
@@ -118,3 +134,4 @@ Ship test: attach to a remote box, run the demo there, watch cards land locally;
 - **Huge-output guards** — 2 MiB card cap exists; what about a runaway process writing hundreds of cards, or a PTY flooding a slow client beyond the pause/resume window? Need per-session card-count caps and a defined degrade mode.
 - **Multi-machine sessions** — when M5 syncs a remote canvas dir, which side owns truth on conflict? Is a session id globally unique or per-host (`host/session`)? Does `$DUET_EVENTS` traverse the SSH channel?
 - **Card lifecycle vs. pane lifecycle** — closing the last pane of a session leaves a live watcher-less directory; should the session tray show "detached" sessions with card counts?
+- **Editor-pane file scope (M2.5)** — which roots may an editor pane read/write? Per-session allowlist? cwd of the session's PTY? User-configured in `~/.duet/config`? The answer gates any file endpoint — localhost + Origin check alone is not a sufficient boundary for arbitrary file access.
