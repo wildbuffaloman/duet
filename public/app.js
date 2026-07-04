@@ -552,14 +552,31 @@
   /* ---------- render pane (cards from the session canvas) ---------- */
   // Cards auto-size: a tiny injected script posts the document height up; we match by contentWindow (unforgeable across frames).
   var SIZER = '<script>(function(){var p=function(){try{parent.postMessage({__duet:"h",h:document.documentElement.scrollHeight},"*")}catch(e){}};try{new ResizeObserver(p).observe(document.documentElement)}catch(e){}addEventListener("load",p);setTimeout(p,30);})();</' + 'script>';
+  // Card links: sandboxed iframes can't navigate anything, so clicks on [data-duet-card] or href="duet:<id>"
+  // post an "open" request up; the owning pane shows that card. Injected into every card — zero boilerplate.
+  var LINKER = '<script>(function(){document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("[data-duet-card],a[href^=\'duet:\']"):null;if(!a)return;e.preventDefault();var id=a.getAttribute("data-duet-card")||(a.getAttribute("href")||"").slice(5);if(id)try{parent.postMessage({__duet:"open",card:String(id)},"*")}catch(x){}},true);})();</' + 'script>';
   window.addEventListener("message", function(ev){
     var d = ev.data;
-    if(!d || d.__duet !== "h" || typeof d.h !== "number") return;
-    var frames = document.querySelectorAll(".card-frame");
-    for(var i = 0; i < frames.length; i++){
-      if(frames[i].contentWindow === ev.source){
-        frames[i].style.height = Math.max(48, Math.min(560, Math.ceil(d.h))) + "px";
-        break;
+    if(!d) return;
+    if(d.__duet === "h" && typeof d.h === "number"){
+      var frames = document.querySelectorAll(".card-frame");
+      for(var i = 0; i < frames.length; i++){
+        if(frames[i].contentWindow === ev.source){
+          frames[i].style.height = Math.max(48, Math.min(560, Math.ceil(d.h))) + "px";
+          break;
+        }
+      }
+      return;
+    }
+    if(d.__duet === "open" && typeof d.card === "string"){
+      var all = document.querySelectorAll(".rp-frame, .card-frame");
+      for(var j = 0; j < all.length; j++){
+        if(all[j].contentWindow === ev.source){ // unforgeable across frames — only the clicked card's pane navigates
+          var host = all[j].closest(".rp-body");
+          var ctl = host && renderCtls[host.dataset.rw];
+          if(ctl && ctl.openCard) ctl.openCard(d.card);
+          break;
+        }
       }
     }
   });
@@ -574,7 +591,7 @@
     var frame = document.createElement("iframe");
     frame.className = "card-frame";
     frame.setAttribute("sandbox", "allow-scripts");
-    frame.srcdoc = (cd.html || "") + SIZER;
+    frame.srcdoc = (cd.html || "") + SIZER + LINKER;
     body.appendChild(frame);
     art.appendChild(body);
     return art;
@@ -583,6 +600,7 @@
   function createRenderBody(w){
     if(w.view !== "list") w.view = "focus"; // default: one card owns the whole pane
     var body = el("div", "rp-body");
+    body.dataset.rw = w.id; // lets the global message router hand card-link opens to this pane
     var cards = [];        // canonical card state, mtime ascending — both views render from this
     var pin = null;        // card id the user pinned in focus view; null = follow latest
     var shownId = null, shownMtime = null;
@@ -637,7 +655,7 @@
       var frame = document.createElement("iframe");
       frame.className = "rp-frame";
       frame.setAttribute("sandbox", "allow-scripts");
-      frame.srcdoc = cd.html || ""; // no SIZER: the pane sizes the frame, content scrolls inside it
+      frame.srcdoc = (cd.html || "") + LINKER; // no SIZER: the pane sizes the frame, content scrolls inside it
       focusWrap.innerHTML = "";
       focusWrap.appendChild(frame);
       shownId = cd.id; shownMtime = cd.mtime;
@@ -762,10 +780,22 @@
         syncBar();
       }
     };
+    /* card→card links: a card asked to open another card in this pane */
+    function openCard(id){
+      var cd = findCard(id);
+      if(!cd){ toast('no card "' + id + '" in session ' + w.session + " yet"); return; }
+      if(w.view === "list"){
+        var elc = cardIn(id);
+        if(elc){ elc.scrollIntoView({ behavior:reduce ? "auto" : "smooth", block:"center" }); flash(elc); }
+      } else {
+        pin = (cd === cards[cards.length - 1]) ? null : cd.id; // landing on the newest resumes following
+        hideNew(); focusShow();
+      }
+    }
     syncBar();
     focusWrap.appendChild(emptyState());
     acquireCanvas(w.session, sub);
-    renderCtls[w.id] = { dispose:function(){ closeMenu(); releaseCanvas(w.session, sub); } };
+    renderCtls[w.id] = { openCard:openCard, dispose:function(){ closeMenu(); releaseCanvas(w.session, sub); } };
     return body;
   }
 
