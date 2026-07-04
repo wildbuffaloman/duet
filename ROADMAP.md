@@ -70,19 +70,38 @@ Decision test: after a week of the spike, "watch the agent edit" is something yo
 
 ---
 
-## M3 — Interactivity back-channel
+## M3 — Tight loop: messaging & state sharing between cards and the session
 
-Goal: cards become bidirectional UIs — a form in a card can drive the program that rendered it.
+Goal: **eliminate manual relay between screens.** Today the human is the message bus — copying a card's compiled prompt into the terminal, retyping terminal state into a card, re-rendering a whole file to change one number. M3 makes cards and the programs that rendered them share events and state natively, so a form in a card drives the program directly and a value the program changes updates the card without a re-render. Built the duet way: **the session dir is the API (`.events.jsonl`, `.state.json`), the WebSocket is only the accelerator (<100ms), and the transport stays file-portable, language-agnostic, greppable.** Three tiers, each killing a class of manual relay:
 
-- [ ] `$DUET_EVENTS` fifo per session (created alongside `$DUET_CANVAS`), advertised in the PTY env
-- [ ] Card sandbox exposes a tiny bridge: form submits and `data-duet-event` button clicks POST to the server (`POST /event?session=…`), which writes one JSON line per event to the fifo: `{"card":"<id>","type":"submit|click","data":{…}}`
-- [ ] Backpressure/no-reader semantics defined: non-blocking writes, bounded buffer, events dropped (with counter) when nothing reads the fifo
-- [ ] `duet events` CLI subcommand: tail the fifo as line-JSON for shell scripts (`while read -r ev; do …`)
-- [ ] Optional stdin mode: `duet events --stdin <pane>` bridges events into the focused terminal as typed lines, for programs that only read stdin
-- [ ] Security pass: events accepted only from the card's own sandbox origin, size-capped, schema-validated; PROTOCOL.md bumped to v2 (additive)
-- [ ] Example: `examples/approve.sh` — script renders an approve/reject card, blocks on the fifo, proceeds on click
+### M3a — Events out of cards (card → agent/script) — *the copy-paste killer; sequence first*
 
-Ship test: a shell script renders a form, a human clicks a button in the card, the script continues — no HTTP code in the script.
+Highest daily-friction payoff, and the primitive already half-exists: the M2 card→card link handler already ships clicks from a sandboxed card to the client via `postMessage` with unforgeable `contentWindow` matching.
+
+- [ ] Generalize the shipped card→card link channel (PROTOCOL.md §5.1): a card posts `{__duet:"event", payload}` → client relays over the already-open canvas WS → server appends one JSON line to `~/.duet/canvas/<session>/.events.jsonl` (advertised as `$DUET_EVENTS`). Same `contentWindow` guard keeps the source card unforgeable
+- [ ] Card bridge: `data-duet-event` buttons and form submits emit `{card, type, data}`; **the template library's "Copy feedback" button becomes "Send to session"** inside duet (clipboard demoted to the standalone-only fallback — supersedes template rule #5)
+- [ ] Consume with zero HTTP in a script: `duet await` (blocks, prints next event on stdout for `$(…)` capture) and `duet events` (tails as line-JSON for `while read -r ev; do …`)
+- [ ] No-reader/backpressure semantics: non-blocking append, bounded buffer, dropped-with-counter when nothing is tailing
+
+### M3b — Shared session state (both directions) — no re-render to change one value
+
+- [ ] One `~/.duet/canvas/<session>/.state.json` per session (advertised as `$DUET_STATE`). Server watches it; on change pushes `{__duet:"state", data}` to every card in the session over the open WS — cards patch their DOM live, no file rewrite
+- [ ] Cards write back `{__duet:"setState", patch}` → server merges into `.state.json` → the agent reads/writes the same file with plain `fs`. A chart card and a terminal script converge on shared live variables — tightest coupling, still "just a file"
+- [ ] Client-injected card helper so template authors skip the postMessage plumbing: `duet.on(state => …)`, `duet.set(patch)`, `duet.emit(event)`
+- [ ] `duet state get|set` CLI; example: a card slider and a terminal `duet state` read stay in sync with zero relay in either direction
+
+### M3c — Direct stdin injection (card → terminal) — *gated, opt-in, ship last or never*
+
+- [ ] Event type that types a line into the session's PTY (`duet events --stdin <pane>`), for programs that only read stdin
+- [ ] **Security gate:** this is the drive-by-RCE shape resurfacing from *inside a card* — arbitrary generated HTML must never type into the shell by default. Per-session opt-in **plus** a confirm chip in the terminal pane before any injected line runs. M3a/M3b deliver ~90% of the value without it
+
+### Cross-cutting
+
+- [ ] **Data, not commands:** cards emit events; the agent decides what to do — keeps the sandbox boundary meaningful. Events/state accepted only from a card's own sandbox origin, size-capped, schema-validated. PROTOCOL.md bumped to v2 (additive)
+- [ ] M2's Claude Code skill updated to auto-wire event + state consumption both ways, so a fresh `claude` session reads card events and shared state with zero setup
+- [ ] Examples: `examples/approve.sh` (renders approve/reject card, blocks on `duet await`, proceeds on click) and `examples/live-state.sh` (terminal + card sharing one `.state.json`)
+
+Ship test: click a button in a card → the agent acts on it with no clipboard step; change a value in the terminal → the card updates without a re-render.
 
 ---
 
@@ -134,4 +153,5 @@ Ship test: attach to a remote box, run the demo there, watch cards land locally;
 - **Huge-output guards** — 2 MiB card cap exists; what about a runaway process writing hundreds of cards, or a PTY flooding a slow client beyond the pause/resume window? Need per-session card-count caps and a defined degrade mode.
 - **Multi-machine sessions** — when M5 syncs a remote canvas dir, which side owns truth on conflict? Is a session id globally unique or per-host (`host/session`)? Does `$DUET_EVENTS` traverse the SSH channel?
 - **Card lifecycle vs. pane lifecycle** — closing the last pane of a session leaves a live watcher-less directory; should the session tray show "detached" sessions with card counts?
+- **Shared-state merge semantics (M3b)** — when a card `setState` patch and an agent `fs` write to `.state.json` race, who wins? Last-write-wins on the whole file loses concurrent edits; a shallow-merge patch protocol is safer but needs a defined conflict rule and a max event/patch rate before the <100ms budget slips. Also: is `.state.json` per-session only, or can cards scope keys to a single card id?
 - **Editor-pane file scope (M2.5)** — which roots may an editor pane read/write? Per-session allowlist? cwd of the session's PTY? User-configured in `~/.duet/config`? The answer gates any file endpoint — localhost + Origin check alone is not a sufficient boundary for arbitrary file access.
