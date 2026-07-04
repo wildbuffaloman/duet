@@ -62,6 +62,14 @@ template:
 New template = copy skeleton, build the domain body, leave fences intact.
 Kit fix = grep the fence across the library, apply the same edit. No build step.
 
+**M3a forward-compat (hook slot, not a feature):** duet's roadmap (M3a, as of `a503bd8`) turns
+the critique templates' "Copy feedback" into "Send to session" via `{__duet:"event"}` /
+`data-duet-event`, superseding rule 5 *inside duet* when it ships. The kit therefore routes its
+submit action through one function, `emitToSession(payload)`, which in v1 feature-detects the
+duet event helper and always falls back to the prompt-compile box + copy button — the v1 output,
+and the permanent standalone-tab behavior per Rule 7. When M3a's injected helper lands, enabling
+"Send to session" is a single grep-propagated fence edit, no template redesign.
+
 **Rule 7 — degrade gracefully outside duet.** duet niceties (e.g. `data-duet-card` card links)
 are allowed but the template must stay fully functional as a lone browser tab or artifact —
 duet-only affordances render inert, never broken.
@@ -106,6 +114,13 @@ The README catalog table maps task-shape → template; the router skill quotes i
   `examples/claude-instructions.md`:
   *"Before designing from scratch, check the HTML template library (`/html-template`) —
   instantiate a template if one fits the task shape."*
+- **Repointing existing references when the vault home lands** (all currently name
+  `~/dev/duet/templates/` as the library): the duet project brief's AI Context rule #1
+  (`01 PROJECTS/Duet — Tiling Agent Terminal/Duet — Tiling Agent Terminal.md`), duet's
+  `templates/README.md`, and the memory file
+  `~/.claude/projects/-Users-albertoduhau/memory/project_duet_html_template_library.md` —
+  all three point at the vault location, with duet described as the incubator.
+  Vault edits beyond that brief: propose, don't auto-apply.
 
 ## Verification (per template)
 
@@ -126,7 +141,8 @@ The README catalog table maps task-shape → template; the router skill quotes i
 ## Out of scope for v1
 
 - Build/generation step (approach B) — revisit if the library grows large.
-- M3-style back-channels replacing the copy-prompt.
+- M3a event plumbing (duet app-side work) — the kit ships only the `emitToSession` hook slot;
+  the actual channel is duet's roadmap, not this library's.
 - Template versioning beyond README dates.
 - Bufalinda-brand-styled variants (`marca-bufalinda` can restyle instantiations later;
   the library stays duet-palette).
