@@ -41,6 +41,7 @@ Ship test: a full day of real work in duet with zero mouse usage for pane manage
 
 Goal: agents treat the canvas as a first-class output device, and cards are addressable from the text stream.
 
+- [x] **Card→card links** (shipped early): duet injects a click handler into every card, so `<a href="duet:<id>">` or any `[data-duet-card]` element navigates the hosting pane to that card via postMessage (PROTOCOL.md §5.1). Same "handle" primitive as below, triggered from canvas HTML instead of the text stream; unresolved targets toast today and become M3 generate-on-demand events later.
 - [ ] **Handles in the text stream**: an OSC 1337-style escape sequence (e.g. `OSC 1337;Duet=handle;card=<id> ST`) a CLI can emit; the client parses it out of the PTY stream and renders an inline "chip" that focuses/flashes the referenced card on click. Printed fallback stays greppable: `duet handle <card>`
 - [ ] **`duet` CLI** (extend `bin/duet` with subcommands, all pure-filesystem so they work over the existing protocol):
   - [ ] `duet render <file> [--as <id>]` — copy/normalize a file into `$DUET_CANVAS` (md → self-contained html later)

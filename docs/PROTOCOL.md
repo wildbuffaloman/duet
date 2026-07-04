@@ -137,6 +137,29 @@ Terminal wiring:
 - Resize: on pane resize, fit the terminal and send the text frame `{"type":"resize","cols":<n>,"rows":<n>}`.
 - Renderer: attempt the WebGL addon inside `try/catch`; on any failure fall back **silently** to xterm.js's canvas renderer.
 
+## 5.1 Card links (navigating between cards)
+
+Cards render in sandboxed iframes (`allow-scripts` only), so ordinary hyperlinks cannot navigate
+anything — by design. Instead, duet injects a tiny click handler (LINKER) into **every** card, so
+card authors need zero boilerplate. To link from one card to another, write either form:
+
+```html
+<a href="duet:deep-termws">deep dive: /term bridge</a>
+<button data-duet-card="deep-termws">deep dive</button>   <!-- any element works -->
+```
+
+- A click posts `{__duet:"open", card:"<id>"}` to the parent. The client matches the message's
+  `ev.source` against card iframe `contentWindow`s (unforgeable across frames), so **only the pane
+  that hosts the clicked card navigates** — other panes, even on the same session, are unaffected.
+- Card ids are filenames without `.html` (§2). In **focus view** the pane shows the target card
+  (pinning it, or resuming follow-latest if the target is the newest card). In **list view** the
+  pane scrolls to the target card and flashes it.
+- Linking to a card that does not exist yet shows a toast today. The planned M3 back-channel will
+  surface these unresolved opens to producers so an agent can generate the artifact on demand and
+  the link resolves on arrival.
+- Suggested slug convention for module documentation: `module-<name>` for UIs, `deep-<name>` for
+  deep dives — stable ids that generated HTML can target before the files exist.
+
 ## 6. Environment variables (inside every duet terminal)
 
 | Variable | Value | Meaning |
