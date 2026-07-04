@@ -435,6 +435,7 @@
 
     function showOverlay(msg){ overlay.querySelector(".msg").textContent = msg; overlay.classList.add("show"); }
     function connect(){
+      if(ws){ var prev = ws; ws = null; try { prev.onclose = null; prev.close(); } catch(e){} } // never orphan a live socket
       closedByUs = false; exited = false;
       overlay.classList.remove("show");
       try { fit.fit(); } catch(e){}

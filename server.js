@@ -19,6 +19,7 @@ const HOST = '127.0.0.1';
 const CANVAS_ROOT = path.join(os.homedir(), '.duet', 'canvas');
 const SESSION_RE = /^[a-z0-9-]{1,32}$/;
 const CARD_FILE_RE = /^[A-Za-z0-9._-]+\.html$/;
+const MAX_CARD_BYTES = 2 * 1024 * 1024; // cards above this are skipped, not truncated
 
 // ---------------------------------------------------------------------------
 // HTTP
@@ -58,6 +59,7 @@ function buildCard(canvasDir, filename) {
   try {
     stat = fs.statSync(full);
     if (!stat.isFile()) return null;
+    if (stat.size > MAX_CARD_BYTES) return null;
     html = fs.readFileSync(full, 'utf8');
   } catch (e) {
     return null;
@@ -72,6 +74,12 @@ function buildCard(canvasDir, filename) {
     if (h && stripTags(h[1])) title = stripTags(h[1]);
   }
   return { id, title, mtime: stat.mtimeMs, html };
+}
+
+function clampDim(v, fallback) {
+  const n = parseInt(v, 10);
+  if (!Number.isInteger(n)) return fallback;
+  return Math.min(Math.max(n, 2), 1000);
 }
 
 function snapshotCards(canvasDir) {
@@ -97,15 +105,22 @@ function snapshotCards(canvasDir) {
 
 const termWss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
+const livePtys = new Set();
+
 termWss.on('connection', (ws, req) => {
   const q = new URL(req.url, 'http://localhost').searchParams;
   const sessionId = q.get('session');
-  const cols = parseInt(q.get('cols'), 10) || 80;
-  const rows = parseInt(q.get('rows'), 10) || 24;
+  const cols = clampDim(q.get('cols'), 80);
+  const rows = clampDim(q.get('rows'), 24);
   // paneId (q.get('pane')) is informational only.
 
   const canvasDir = canvasDirFor(sessionId);
-  fs.mkdirSync(canvasDir, { recursive: true });
+  try {
+    fs.mkdirSync(canvasDir, { recursive: true });
+  } catch (e) {
+    ws.close(1011, 'canvas dir unavailable');
+    return;
+  }
 
   let proc;
   try {
@@ -127,14 +142,43 @@ termWss.on('connection', (ws, req) => {
     return;
   }
 
+  livePtys.add(proc);
   let exited = false;
 
+  // Backpressure: pause the PTY when the WS send buffer backs up (slow client),
+  // resume once it drains. Prevents unbounded memory growth on the data path.
+  const HIGH_WATER = 1 << 20; // 1 MiB
+  const LOW_WATER = 64 * 1024;
+  let paused = false;
+  let drainTimer = null;
+
+  function resumeWhenDrained() {
+    drainTimer = setInterval(() => {
+      if (ws.readyState !== 1 || ws.bufferedAmount <= LOW_WATER) {
+        clearInterval(drainTimer);
+        drainTimer = null;
+        paused = false;
+        if (ws.readyState === 1) {
+          try { proc.resume(); } catch (e) { /* pty gone */ }
+        }
+      }
+    }, 50);
+  }
+
   proc.onData((d) => {
-    if (ws.readyState === 1) ws.send(Buffer.from(d));
+    if (ws.readyState !== 1) return;
+    ws.send(Buffer.from(d));
+    if (!paused && ws.bufferedAmount > HIGH_WATER && typeof proc.pause === 'function') {
+      paused = true;
+      try { proc.pause(); } catch (e) { paused = false; return; }
+      resumeWhenDrained();
+    }
   });
 
   proc.onExit(({ exitCode }) => {
     exited = true;
+    livePtys.delete(proc);
+    if (drainTimer) { clearInterval(drainTimer); drainTimer = null; }
     if (ws.readyState === 1) {
       try {
         ws.send(JSON.stringify({ type: 'exit', code: exitCode }));
@@ -158,14 +202,16 @@ termWss.on('connection', (ws, req) => {
       }
       if (msg && msg.type === 'resize' && Number.isInteger(msg.cols) && Number.isInteger(msg.rows)) {
         try {
-          proc.resize(msg.cols, msg.rows);
+          proc.resize(clampDim(msg.cols, 80), clampDim(msg.rows, 24));
         } catch (e) { /* ignore */ }
       }
     }
   });
 
   ws.on('close', () => {
+    if (drainTimer) { clearInterval(drainTimer); drainTimer = null; }
     if (!exited) {
+      livePtys.delete(proc);
       try {
         proc.kill();
       } catch (e) { /* ignore */ }
@@ -240,7 +286,12 @@ canvasWss.on('connection', (ws, req) => {
   const sessionId = q.get('session');
 
   const canvasDir = canvasDirFor(sessionId);
-  fs.mkdirSync(canvasDir, { recursive: true });
+  try {
+    fs.mkdirSync(canvasDir, { recursive: true });
+  } catch (e) {
+    ws.close(1011, 'canvas dir unavailable');
+    return;
+  }
 
   ws.send(JSON.stringify({ type: 'snapshot', cards: snapshotCards(canvasDir) }));
 
@@ -255,8 +306,34 @@ canvasWss.on('connection', (ws, req) => {
 // Upgrade routing
 // ---------------------------------------------------------------------------
 
+// SECURITY: browsers attach an Origin header to every WebSocket handshake. A
+// /term socket is a full shell, so reject any browser origin that isn't this
+// server itself (blocks arbitrary web pages connecting to 127.0.0.1). Requests
+// without an Origin (curl, wscat, native clients) are allowed — they are not
+// subject to the browser threat model.
+function originAllowed(req) {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  let o;
+  try {
+    o = new URL(origin);
+  } catch (e) {
+    return false;
+  }
+  if (o.protocol !== 'http:' && o.protocol !== 'https:') return false;
+  if (o.hostname !== '127.0.0.1' && o.hostname !== 'localhost' && o.hostname !== '[::1]') return false;
+  const port = o.port || (o.protocol === 'https:' ? '443' : '80');
+  return port === String(PORT);
+}
+
 server.on('upgrade', (req, socket, head) => {
   socket.setNoDelay(true);
+
+  if (!originAllowed(req)) {
+    socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+    socket.destroy();
+    return;
+  }
 
   let url;
   try {
@@ -304,3 +381,28 @@ server.on('error', (err) => {
 server.listen(PORT, HOST, () => {
   console.log(`duet listening on http://${HOST}:${PORT}`);
 });
+
+// ---------------------------------------------------------------------------
+// Shutdown — kill PTYs, close watchers and sockets, then exit.
+// ---------------------------------------------------------------------------
+
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`duet: ${signal} — shutting down`);
+  for (const proc of livePtys) {
+    try { proc.kill(); } catch (e) { /* ignore */ }
+  }
+  livePtys.clear();
+  for (const [sessionId, entry] of canvasWatchers) {
+    canvasWatchers.delete(sessionId);
+    entry.watcher.close().catch(() => {});
+  }
+  for (const ws of termWss.clients) ws.terminate();
+  for (const ws of canvasWss.clients) ws.terminate();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 2000).unref();
+}
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
