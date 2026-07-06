@@ -11,6 +11,16 @@ a duet render pane, a browser tab, an artifact, an email attachment.
 3. **Data lives at the top of the script.** Each template declares its content as plain `const`-style data blocks (components, flows, options…) immediately after `"use strict"`. Instantiating a template = copy the file, replace the data blocks and the `<title>`/`<h1>`, touch nothing else.
 4. **duet palette by default**: ground `#0a0e16`, panel `#0f1523`, ink `#c6d0de`, amber `#e8b862` (text surface), teal `#3fd3bf` (canvas surface), purple `#a78bfa` (session link). Semantic colors are separate (`--good`, warn, down). Templates are dark; they render on the canvas.
 5. **The output is a prompt.** Interactive templates that collect input must compile it into natural language in a copyable box — the copy-paste prompt is the back-channel to the agent until M3 ships a real one.
+6. **The critique kit.** Shared machinery (stance state, notes, prompt compiler, sandbox-safe
+   copy, data-block validator) lives inside `<!-- CRITIQUE-KIT BEGIN -->` / `<!-- CRITIQUE-KIT END -->`
+   fences in every template — identical across the library, sourced from `_skeleton.html`.
+   Templates never modify the kit; a kit fix is applied to every fence by grep. The kit's
+   submit path is `emitToSession(text)`: a feature-detect hook slot that returns `false` in v1
+   (always fall back to the compiled-prompt box + copy button). When duet M3a ships its injected
+   event helper, one fence edit flips "Copy feedback" to "Send to session" inside duet.
+7. **Degrade gracefully outside duet.** duet niceties (`data-duet-card` links, the future M3a
+   channel) are allowed but the template must stay fully functional as a lone browser tab or
+   artifact — duet-only affordances render inert, never broken.
 
 ## Templates
 
@@ -34,3 +44,9 @@ cp templates/<template>.html <dest>.html   # e.g. $DUET_CANVAS/my-review.html
 
 When asked for a rich interactive HTML deliverable, check this library first; if a new design is
 general enough to reuse, add it here with a section in this README.
+
+## Linting
+
+`node templates/lint-templates.js` — checks every template against rules 1–7
+(title, strict mode, fences, data-block markers, hook slot, no external resources).
+Run it before committing any template change.
