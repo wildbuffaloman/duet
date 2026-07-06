@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Decision matrix — weighted options</title>
+<style>
+  :root{--bg:#0a0e16;--panel:#0f1523;--line:#243049;--ink:#c6d0de;--dim:#6f7d92;
+    --amber:#e8b862;--teal:#3fd3bf;--purple:#a78bfa;--good:#4ade80;--warn:#fbbf24;--down:#f87171;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:13.5px/1.6 var(--sans);padding:20px 22px 30px}
+  h1{margin:0 0 4px;font:700 19px var(--sans)}
+  .sub{color:var(--dim);margin:0 0 18px;font-size:12.5px}
+  h2{margin:22px 0 8px;font:10.5px var(--mono);letter-spacing:1.1px;text-transform:uppercase;color:var(--dim)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:0 0 14px}
+  /* kit styles (part of the kit contract — keep with the fences) */
+  .kit-stance{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+  .kit-stance button{font:600 11px var(--mono);background:none;border:1px solid var(--line);
+    border-radius:7px;color:var(--dim);padding:4px 9px;cursor:pointer}
+  .kit-stance button.on-keep{color:var(--good);border-color:var(--good)}
+  .kit-stance button.on-change{color:var(--warn);border-color:var(--warn)}
+  .kit-stance button.on-question{color:var(--purple);border-color:var(--purple)}
+  .kit-stance textarea{flex:1 1 100%;background:var(--bg);border:1px solid var(--line);
+    border-radius:7px;color:var(--ink);font:12px var(--sans);padding:6px 8px;min-height:30px;resize:vertical}
+  .kit-banner{background:rgba(248,113,113,.12);border:1px solid var(--down);color:var(--down);
+    border-radius:8px;padding:8px 12px;margin:0 0 12px;font:600 12px var(--mono)}
+  .kit-box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .kit-out{font:12px var(--mono);white-space:pre-wrap;color:var(--ink);min-height:40px}
+  .kit-copy{margin-top:10px;font:600 12px var(--mono);background:none;border:1px solid var(--teal);
+    color:var(--teal);border-radius:8px;padding:6px 14px;cursor:pointer}
+</style></head>
+<body>
+  <h1 id="hdr">Decision matrix</h1>
+  <p class="sub" id="sub">Drag the weights; the ranking re-sorts live. The sensitivity hint flags criteria that can flip the winner.</p>
+
+  <div id="app"></div>
+
+<script>
+"use strict";
+/* ===== DATA BLOCKS (replace on instantiation) ===== */
+// OPTIONS: [{id:"a", name:"Option A"}]
+const OPTIONS = [ {id:"a", name:"Option A"}, {id:"b", name:"Option B"}, {id:"c", name:"Option C"} ];
+// CRITERIA: weight 0-10; direction "higher"|"lower" (lower = smaller score is better, e.g. cost)
+// [{id:"cost", name:"Cost", weight:5, direction:"lower"}]
+const CRITERIA = [
+  {id:"cost",  name:"Cost",           weight:5, direction:"lower"},
+  {id:"speed", name:"Time to ship",   weight:7, direction:"lower"},
+  {id:"fit",   name:"Strategic fit",  weight:8, direction:"higher"}
+];
+// SCORES: raw 1-10 per option per criterion — {optionId: {criterionId: n}}
+const SCORES = {
+  a: {cost:4, speed:3, fit:9},
+  b: {cost:7, speed:8, fit:5},
+  c: {cost:5, speed:6, fit:7}
+};
+/* ===== END DATA BLOCKS ===== */
+
+window.addEventListener("DOMContentLoaded", function(){
+  if (!Kit.validate("OPTIONS", OPTIONS, ["id","name"])) return;
+  if (!Kit.validate("CRITERIA", CRITERIA, ["id","name","weight","direction"])) return;
+  for (var i = 0; i < OPTIONS.length; i++){
+    var oid = OPTIONS[i].id;
+    if (!SCORES[oid]){ Kit.banner("data block invalid: SCORES missing option `" + oid + "`"); return; }
+    for (var j = 0; j < CRITERIA.length; j++)
+      if (!(CRITERIA[j].id in SCORES[oid])){
+        Kit.banner("data block invalid: SCORES." + oid + " missing `" + CRITERIA[j].id + "`"); return; }
+  }
+  Kit.state["_notes"] = {stance:null, note:""};
+  var w = {}; CRITERIA.forEach(function(c){ w[c.id] = c.weight; });
+  var app = document.getElementById("app");
+  var sliders = Kit.el("div","panel"); sliders.appendChild(Kit.el("h2",null,"weights"));
+  CRITERIA.forEach(function(c){
+    var row = Kit.el("div"); row.style.cssText = "display:flex;align-items:center;gap:10px;margin:6px 0";
+    var lbl = Kit.el("span",null,c.name + (c.direction === "lower" ? " (lower is better)" : ""));
+    lbl.style.cssText = "flex:0 0 220px";
+    var inp = document.createElement("input"); inp.type = "range"; inp.min = 0; inp.max = 10; inp.value = c.weight;
+    inp.style.flex = "1";
+    var val = Kit.el("b",null,String(c.weight)); val.style.cssText = "flex:0 0 20px;color:var(--amber)";
+    inp.oninput = function(){ w[c.id] = +inp.value; val.textContent = inp.value; render(); };
+    row.appendChild(lbl); row.appendChild(inp); row.appendChild(val); sliders.appendChild(row);
+  });
+  app.appendChild(sliders);
+  var board = Kit.el("div","panel"); app.appendChild(board);
+  var noteP = Kit.el("div","panel"); noteP.appendChild(Kit.el("h2",null,"notes"));
+  var ta = document.createElement("textarea");
+  ta.style.cssText = "width:100%;min-height:50px;background:var(--bg);border:1px solid var(--line);border-radius:7px;color:var(--ink);font:12px var(--sans);padding:8px";
+  ta.placeholder = "constraints, vetoes, context the matrix can't hold…";
+  ta.oninput = function(){ Kit.state["_notes"].note = ta.value; render(); };
+  noteP.appendChild(ta); app.appendChild(noteP);
+
+  function totals(weights){
+    return OPTIONS.map(function(o){
+      var t = 0; CRITERIA.forEach(function(c){
+        var raw = SCORES[o.id][c.id], v = c.direction === "lower" ? 11 - raw : raw;
+        t += v * weights[c.id]; });
+      return {o:o, t:t};
+    }).sort(function(a,b){ return b.t - a.t; });
+  }
+  function sensitivity(){
+    var win = totals(w)[0].o.id, flips = [];
+    CRITERIA.forEach(function(c){
+      for (var d = 0; d <= 10; d++){
+        var w2 = {}; CRITERIA.forEach(function(x){ w2[x.id] = w[x.id]; }); w2[c.id] = d;
+        if (totals(w2)[0].o.id !== win){ flips.push(c.name); break; }
+      }
+    });
+    return flips;
+  }
+  function render(){
+    board.innerHTML = ""; board.appendChild(Kit.el("h2",null,"ranking"));
+    var rk = totals(w), max = rk[0].t || 1;
+    rk.forEach(function(r,i){
+      var row = Kit.el("div"); row.style.cssText = "display:flex;align-items:center;gap:10px;margin:6px 0";
+      row.appendChild(Kit.el("b",null,(i+1) + ". " + r.o.name)).style.cssText = "flex:0 0 200px;color:" + (i === 0 ? "var(--good)" : "var(--ink)");
+      var bar = Kit.el("div"); bar.style.cssText = "height:10px;border-radius:5px;background:" +
+        (i === 0 ? "var(--good)" : "var(--line)") + ";width:" + Math.round(r.t / max * 60) + "%";
+      row.appendChild(bar);
+      row.appendChild(Kit.el("span","sub",String(r.t)));
+      board.appendChild(row);
+    });
+    var fl = sensitivity();
+    board.appendChild(Kit.el("div","sub", fl.length
+      ? "⚠ sensitive: re-weighting " + fl.join(" or ") + " can flip the winner"
+      : "✓ robust: no single weight change flips the winner"));
+    document.getElementById("kit-out").textContent = compile();
+  }
+  function compile(){
+    var rk = totals(w), fl = sensitivity();
+    var lines = ["Decision rationale — " + document.title, ""];
+    lines.push("Winner: " + rk[0].o.name + " (score " + rk[0].t + ", runner-up " + rk[1].o.name + " at " + rk[1].t + ").");
+    lines.push("Weights: " + CRITERIA.map(function(c){ return c.name + "=" + w[c.id]; }).join(", ") + ".");
+    lines.push(fl.length ? "Sensitivity: re-weighting " + fl.join(" or ") + " can flip the winner."
+                         : "Sensitivity: robust to any single weight change.");
+    if (Kit.state["_notes"].note) lines.push("Notes: " + Kit.state["_notes"].note);
+    return lines.join("\n");
+  }
+  Kit.init({compile: compile}); render();
+});
+</script>
+
+<!-- CRITIQUE-KIT BEGIN (shared machinery — keep in sync across library, see _skeleton.html) -->
+<h2>Compiled feedback</h2>
+<div class="kit-box"><div class="kit-out" id="kit-out"></div>
+<button class="kit-copy" id="kit-copy">Copy feedback</button></div>
+<script>
+"use strict";
+var Kit = (function(){
+  var state = {}, compileFn = null;
+  function el(tag, cls, text){ var n = document.createElement(tag);
+    if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+  function banner(msg){ document.body.prepend(el("div","kit-banner",msg)); }
+  function validate(name, arr, keys){
+    if (!Array.isArray(arr) || !arr.length){ banner("data block invalid: " + name + " must be a non-empty array"); return false; }
+    for (var i = 0; i < arr.length; i++) for (var k = 0; k < keys.length; k++)
+      if (!(keys[k] in arr[i])){ banner("data block invalid: " + name + "[" + i + "] missing `" + keys[k] + "`"); return false; }
+    return true;
+  }
+  function stanceEl(id){
+    state[id] = state[id] || {stance:null, note:""};
+    var box = el("div","kit-stance");
+    ["keep","change","question"].forEach(function(s){
+      var b = el("button",null,{keep:"✓ keep",change:"✎ change",question:"? question"}[s]);
+      b.dataset.s = s;
+      b.onclick = function(){ state[id].stance = state[id].stance === s ? null : s; sync(box,id); recompile(); };
+      box.appendChild(b);
+    });
+    var t = document.createElement("textarea"); t.placeholder = "note…";
+    t.oninput = function(){ state[id].note = t.value; recompile(); };
+    box.appendChild(t); sync(box,id); return box;
+  }
+  function sync(box,id){ box.querySelectorAll("button").forEach(function(b){
+    b.className = state[id].stance === b.dataset.s ? "on-" + b.dataset.s : ""; }); }
+  function recompile(){ if (compileFn) document.getElementById("kit-out").textContent = compileFn(state); }
+  function emitToSession(text){
+    /* M3a HOOK SLOT (duet ROADMAP): when duet injects its event helper, feature-detect it here
+       and send {type:"feedback", data:{text:text}} — flipping this button to "Send to session"
+       inside duet. Until then: always return false (copy fallback is the v1 output, and the
+       permanent standalone-tab behavior). */
+    return false;
+  }
+  function copy(){
+    var out = document.getElementById("kit-out"), txt = out.textContent, btn = document.getElementById("kit-copy");
+    if (emitToSession(txt)) return;
+    var ta = document.createElement("textarea"); ta.value = txt;
+    document.body.appendChild(ta); ta.select();
+    var ok = false; try { ok = document.execCommand("copy"); } catch(e){}
+    document.body.removeChild(ta);
+    if (ok){ btn.textContent = "copied ✓"; setTimeout(function(){ btn.textContent = "Copy feedback"; }, 1200); }
+    else { var r = document.createRange(); r.selectNodeContents(out);
+      var s = getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = "press ⌘C"; }
+  }
+  function init(opts){ compileFn = opts.compile;
+    document.getElementById("kit-copy").onclick = copy; recompile(); }
+  return {init:init, stanceEl:stanceEl, validate:validate, el:el, state:state, banner:banner, emitToSession:emitToSession};
+})();
+</script>
+<!-- CRITIQUE-KIT END -->
+</body></html>
