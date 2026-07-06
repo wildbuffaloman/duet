@@ -120,7 +120,7 @@ var Kit = (function(){
   }
   function init(opts){ compileFn = opts.compile;
     document.getElementById("kit-copy").onclick = copy; recompile(); }
-  return {init:init, stanceEl:stanceEl, validate:validate, el:el, state:state, banner:banner};
+  return {init:init, stanceEl:stanceEl, validate:validate, el:el, state:state, banner:banner, emitToSession:emitToSession};
 })();
 </script>
 <!-- CRITIQUE-KIT END -->

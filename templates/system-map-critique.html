@@ -192,7 +192,8 @@
 var $=function(s){return document.querySelector(s)};
 var C={amber:"#e8b862",teal:"#3fd3bf",purple:"#a78bfa",neutral:"#63708a"};
 
-/* ---------- data ---------- */
+/* ===== DATA BLOCKS (replace on instantiation) ===== */
+// COMPONENTS: nodes to explain + critique — [{id:"wm", col:"browser", color:"neutral", name:"...", sub:"...", role:"...", decision:"..."}]
 var COMPONENTS=[
  {id:"wm",col:"browser",color:"neutral",name:"Tiling window manager",sub:"BSP split tree · public/app.js",
   role:"Every pane is a leaf in a binary split tree. Split right/down (choosing terminal-or-render + session), flip a seam ⇄/⇅, drag it to resize, drag a grip to swap panes, hide to tray. The tree persists to localStorage and restores on reload.",
@@ -223,6 +224,7 @@ var COMPONENTS=[
   decision:"No SDK means every tool you already have is already integrated."}
 ];
 
+// WIRES: directed edges between components — [{from:"a", to:"b", color:"amber", dash:true, off:-7, label:"..."}]
 var WIRES=[
  {from:"termpane",to:"termws",color:"amber",off:-7,label:"keys · binary"},
  {from:"termws",to:"termpane",color:"amber",off:7,label:"output · binary"},
@@ -234,6 +236,7 @@ var WIRES=[
  {from:"session",to:"renderpane",color:"purple",dash:true}
 ];
 
+// FLOWS: animatable paths through components — [{id:"key", color:"amber", name:"...", budget:"...", desc:"...", path:["a","b","a"]}]
 var FLOWS=[
  {id:"key",color:"amber",name:"① keystroke round-trip",budget:"< 5 ms",
   desc:"you type → binary frame → PTY → shell echoes → binary frame → WebGL paint",
@@ -246,6 +249,7 @@ var FLOWS=[
   path:["termpane","termws","canvasdir","canvasws","renderpane"]}
 ];
 
+// PRIORITIES: roadmap items to vote on — [{id:"kbd", m:"M1", label:"..."}]  ·  PRESETS: named stance bundles {name:[ids]}
 var PRIORITIES=[
  {id:"kbd",m:"M1",label:"keyboard splits & pane navigation (cmd+d…)"},
  {id:"zoom",m:"M1",label:"pane zoom (temporarily maximize one pane)"},
@@ -257,6 +261,7 @@ var PRIORITIES=[
  {id:"remote",m:"M5",label:"remote sessions over SSH + share links"}
 ];
 var PRESETS={daily:["kbd","zoom","config"],agent:["cli","skill","backchannel"],product:["tauri","kbd","remote"],clear:[]};
+/* ===== END DATA BLOCKS ===== */
 
 /* ---------- state ---------- */
 var state={selected:"canvasdir",feedback:{},priorities:{},general:"",preset:null};
@@ -433,6 +438,7 @@ function updateAll(){ updateDetail(); updateFlags(); updatePrio(); updatePrompt(
 /* ---------- copy (sandbox-safe: execCommand first — clipboard API is blocked in sandboxed iframes) ---------- */
 $("#copy").addEventListener("click",function(){
   var txt=$("#prompt").textContent, b=this;
+  if (typeof Kit !== "undefined" && Kit.emitToSession && Kit.emitToSession(txt)) return; // M3a hook slot (v1: no-op)
   function ok(){ b.textContent="Copied!"; setTimeout(function(){b.textContent="Copy"},1400); }
   function selectPrompt(){ // last resort: leave the text selected so ⌘C works
     var r=document.createRange(); r.selectNodeContents($("#prompt"));
@@ -456,5 +462,63 @@ window.addEventListener("resize",drawWires);
 if(window.ResizeObserver) new ResizeObserver(drawWires).observe($("#diagram"));
 })();
 </script>
+
+<!-- CRITIQUE-KIT BEGIN (shared machinery — keep in sync across library, see _skeleton.html) -->
+<h2 style="display:none">Compiled feedback</h2>
+<div class="kit-box" style="display:none"><div class="kit-out" id="kit-out"></div>
+<button class="kit-copy" id="kit-copy">Copy feedback</button></div>
+<script>
+"use strict";
+var Kit = (function(){
+  var state = {}, compileFn = null;
+  function el(tag, cls, text){ var n = document.createElement(tag);
+    if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+  function banner(msg){ document.body.prepend(el("div","kit-banner",msg)); }
+  function validate(name, arr, keys){
+    if (!Array.isArray(arr) || !arr.length){ banner("data block invalid: " + name + " must be a non-empty array"); return false; }
+    for (var i = 0; i < arr.length; i++) for (var k = 0; k < keys.length; k++)
+      if (!(keys[k] in arr[i])){ banner("data block invalid: " + name + "[" + i + "] missing `" + keys[k] + "`"); return false; }
+    return true;
+  }
+  function stanceEl(id){
+    state[id] = state[id] || {stance:null, note:""};
+    var box = el("div","kit-stance");
+    ["keep","change","question"].forEach(function(s){
+      var b = el("button",null,{keep:"✓ keep",change:"✎ change",question:"? question"}[s]);
+      b.dataset.s = s;
+      b.onclick = function(){ state[id].stance = state[id].stance === s ? null : s; sync(box,id); recompile(); };
+      box.appendChild(b);
+    });
+    var t = document.createElement("textarea"); t.placeholder = "note…";
+    t.oninput = function(){ state[id].note = t.value; recompile(); };
+    box.appendChild(t); sync(box,id); return box;
+  }
+  function sync(box,id){ box.querySelectorAll("button").forEach(function(b){
+    b.className = state[id].stance === b.dataset.s ? "on-" + b.dataset.s : ""; }); }
+  function recompile(){ if (compileFn) document.getElementById("kit-out").textContent = compileFn(state); }
+  function emitToSession(text){
+    /* M3a HOOK SLOT (duet ROADMAP): when duet injects its event helper, feature-detect it here
+       and send {type:"feedback", data:{text:text}} — flipping this button to "Send to session"
+       inside duet. Until then: always return false (copy fallback is the v1 output, and the
+       permanent standalone-tab behavior). */
+    return false;
+  }
+  function copy(){
+    var out = document.getElementById("kit-out"), txt = out.textContent, btn = document.getElementById("kit-copy");
+    if (emitToSession(txt)) return;
+    var ta = document.createElement("textarea"); ta.value = txt;
+    document.body.appendChild(ta); ta.select();
+    var ok = false; try { ok = document.execCommand("copy"); } catch(e){}
+    document.body.removeChild(ta);
+    if (ok){ btn.textContent = "copied ✓"; setTimeout(function(){ btn.textContent = "Copy feedback"; }, 1200); }
+    else { var r = document.createRange(); r.selectNodeContents(out);
+      var s = getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = "press ⌘C"; }
+  }
+  function init(opts){ compileFn = opts.compile;
+    document.getElementById("kit-copy").onclick = copy; recompile(); }
+  return {init:init, stanceEl:stanceEl, validate:validate, el:el, state:state, banner:banner, emitToSession:emitToSession};
+})();
+</script>
+<!-- CRITIQUE-KIT END -->
 </body>
 </html>
