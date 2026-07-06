@@ -34,6 +34,7 @@ priority voting with stance presets, and a live-compiled feedback prompt with co
   plus `<title>`, the `<h1>`, and the header legend.
 - **Use for:** explaining an architecture/plan/pipeline and harvesting structured feedback on it.
 - **First used:** 2026-07-04, duet's own architecture review.
+- **Canonical:** vault `03 REFERENCE/CHECKLISTS & TEMPLATES/HTML TEMPLATES/` (graduated 2026-07-04; this copy is the incubator snapshot).
 
 ### `ui-design-chooser.html`
 Choose between rendered visual design options. Each option is a real, self-contained mockup
@@ -44,6 +45,7 @@ compiled output names the chosen option(s) and what to steal from the rest.
   self-contained fragment), plus `<title>`, the `<h1>`, and `.sub`.
 - **Use for:** picking between visual design directions when seeing beats describing.
 - **First used:** 2026-07-04, library v1.
+- **Canonical:** vault `03 REFERENCE/CHECKLISTS & TEMPLATES/HTML TEMPLATES/` (graduated 2026-07-04; this copy is the incubator snapshot).
 
 ### `sop-map-critique.html`
 Swimlane map of a process — one lane per role, step cards showing inputs / outputs / ⚠ failure
@@ -54,6 +56,7 @@ an existing SOP, or (all stances blank on a draft) running the design session it
   (id/role/name/desc/inputs/outputs/failure_modes), `HANDOFFS` (from/to), plus `<title>`/`<h1>`/`.sub`.
 - **Use for:** designing or reviewing a standard operating procedure / multi-role process.
 - **First used:** 2026-07-04, library v1.
+- **Canonical:** vault `03 REFERENCE/CHECKLISTS & TEMPLATES/HTML TEMPLATES/` (graduated 2026-07-04; this copy is the incubator snapshot).
 
 ### `decision-matrix.html`
 Options × weighted criteria decision. Drag the criterion weights and the ranking re-sorts live;
@@ -64,6 +67,7 @@ matrix can't hold. Compiled output is a decision rationale (winner, weights, sen
   (`{optionId: {criterionId: n}}`), plus `<title>`/`<h1>`/`.sub`.
 - **Use for:** a defensible multi-criteria choice with visible sensitivity.
 - **First used:** 2026-07-04, library v1.
+- **Canonical:** vault `03 REFERENCE/CHECKLISTS & TEMPLATES/HTML TEMPLATES/` (graduated 2026-07-04; this copy is the incubator snapshot).
 
 ### `doc-review.html`
 Critique any document section by section — each section rendered with its body, keep / change /
@@ -74,6 +78,7 @@ fits. Compiled output lists §-referenced findings and review progress.
   plus `<title>`/`<h1>`/`.sub`.
 - **Use for:** structured review of a spec, proposal, brief, or any sectioned document.
 - **First used:** 2026-07-04, library v1.
+- **Canonical:** vault `03 REFERENCE/CHECKLISTS & TEMPLATES/HTML TEMPLATES/` (graduated 2026-07-04; this copy is the incubator snapshot).
 
 ## Instantiating (for agents)
 
