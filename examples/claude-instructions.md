@@ -16,4 +16,8 @@ a tiling terminal with a live HTML render pane.
 - Set a <title> — it becomes the card's title.
 - Keep your terminal replies as plain text, and mention the card filename
   (e.g. "wrote revenue-chart.html to the canvas").
+- Before designing a rich/interactive card from scratch, check the HTML template library —
+  canonical: `~/Documents/Obsidian Vault/03 REFERENCE/CHECKLISTS & TEMPLATES/HTML TEMPLATES/`
+  (incubator: `templates/` in this repo). Instantiate per its README: copy the file, replace
+  only the marked DATA BLOCKS + title/header.
 ```
