@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Template skeleton — replace me</title>
+<style>
+  :root{--bg:#0a0e16;--panel:#0f1523;--line:#243049;--ink:#c6d0de;--dim:#6f7d92;
+    --amber:#e8b862;--teal:#3fd3bf;--purple:#a78bfa;--good:#4ade80;--warn:#fbbf24;--down:#f87171;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:13.5px/1.6 var(--sans);padding:20px 22px 30px}
+  h1{margin:0 0 4px;font:700 19px var(--sans)}
+  .sub{color:var(--dim);margin:0 0 18px;font-size:12.5px}
+  h2{margin:22px 0 8px;font:10.5px var(--mono);letter-spacing:1.1px;text-transform:uppercase;color:var(--dim)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:0 0 14px}
+  /* kit styles (part of the kit contract — keep with the fences) */
+  .kit-stance{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+  .kit-stance button{font:600 11px var(--mono);background:none;border:1px solid var(--line);
+    border-radius:7px;color:var(--dim);padding:4px 9px;cursor:pointer}
+  .kit-stance button.on-keep{color:var(--good);border-color:var(--good)}
+  .kit-stance button.on-change{color:var(--warn);border-color:var(--warn)}
+  .kit-stance button.on-question{color:var(--purple);border-color:var(--purple)}
+  .kit-stance textarea{flex:1 1 100%;background:var(--bg);border:1px solid var(--line);
+    border-radius:7px;color:var(--ink);font:12px var(--sans);padding:6px 8px;min-height:30px;resize:vertical}
+  .kit-banner{background:rgba(248,113,113,.12);border:1px solid var(--down);color:var(--down);
+    border-radius:8px;padding:8px 12px;margin:0 0 12px;font:600 12px var(--mono)}
+  .kit-box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .kit-out{font:12px var(--mono);white-space:pre-wrap;color:var(--ink);min-height:40px}
+  .kit-copy{margin-top:10px;font:600 12px var(--mono);background:none;border:1px solid var(--teal);
+    color:var(--teal);border-radius:8px;padding:6px 14px;cursor:pointer}
+</style></head>
+<body>
+  <h1 id="hdr">Skeleton</h1>
+  <p class="sub" id="sub">Copy this file to start a new template. Replace the data blocks, build the body, leave the kit fences intact.</p>
+
+  <div id="app"></div>
+
+<script>
+"use strict";
+/* ===== DATA BLOCKS (replace on instantiation) ===== */
+// ITEMS: things to critique — [{id:"a", name:"First item", desc:"What it is"}]
+const ITEMS = [
+  {id:"a", name:"Example item A", desc:"Replace ITEMS with your template's real data blocks."},
+  {id:"b", name:"Example item B", desc:"Each block gets a shape comment with one example element."}
+];
+/* ===== END DATA BLOCKS ===== */
+
+/* ---- domain body (template-specific: replace everything below until the kit fence) ---- */
+window.addEventListener("DOMContentLoaded", function(){
+  if (!Kit.validate("ITEMS", ITEMS, ["id","name","desc"])) return;
+  var app = document.getElementById("app");
+  ITEMS.forEach(function(it){
+    var p = Kit.el("div","panel");
+    p.appendChild(Kit.el("h2",null,it.name));
+    p.appendChild(Kit.el("div",null,it.desc));
+    p.appendChild(Kit.stanceEl(it.id));
+    app.appendChild(p);
+  });
+  Kit.init({compile:function(state){
+    var lines = ["Feedback on: " + document.title, ""];
+    ITEMS.forEach(function(it){
+      var s = state[it.id]; if(!s || (!s.stance && !s.note)) return;
+      lines.push("- " + it.name + ": " + (s.stance || "note") + (s.note ? " — " + s.note : ""));
+    });
+    if (lines.length === 2) lines.push("(nothing flagged yet — mark stances above)");
+    return lines.join("\n");
+  }});
+});
+</script>
+
+<!-- CRITIQUE-KIT BEGIN (shared machinery — keep in sync across library, see _skeleton.html) -->
+<h2>Compiled feedback</h2>
+<div class="kit-box"><div class="kit-out" id="kit-out"></div>
+<button class="kit-copy" id="kit-copy">Copy feedback</button></div>
+<script>
+"use strict";
+var Kit = (function(){
+  var state = {}, compileFn = null;
+  function el(tag, cls, text){ var n = document.createElement(tag);
+    if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+  function banner(msg){ document.body.prepend(el("div","kit-banner",msg)); }
+  function validate(name, arr, keys){
+    if (!Array.isArray(arr) || !arr.length){ banner("data block invalid: " + name + " must be a non-empty array"); return false; }
+    for (var i = 0; i < arr.length; i++) for (var k = 0; k < keys.length; k++)
+      if (!(keys[k] in arr[i])){ banner("data block invalid: " + name + "[" + i + "] missing `" + keys[k] + "`"); return false; }
+    return true;
+  }
+  function stanceEl(id){
+    state[id] = state[id] || {stance:null, note:""};
+    var box = el("div","kit-stance");
+    ["keep","change","question"].forEach(function(s){
+      var b = el("button",null,{keep:"✓ keep",change:"✎ change",question:"? question"}[s]);
+      b.dataset.s = s;
+      b.onclick = function(){ state[id].stance = state[id].stance === s ? null : s; sync(box,id); recompile(); };
+      box.appendChild(b);
+    });
+    var t = document.createElement("textarea"); t.placeholder = "note…";
+    t.oninput = function(){ state[id].note = t.value; recompile(); };
+    box.appendChild(t); sync(box,id); return box;
+  }
+  function sync(box,id){ box.querySelectorAll("button").forEach(function(b){
+    b.className = state[id].stance === b.dataset.s ? "on-" + b.dataset.s : ""; }); }
+  function recompile(){ if (compileFn) document.getElementById("kit-out").textContent = compileFn(state); }
+  function emitToSession(text){
+    /* M3a HOOK SLOT (duet ROADMAP): when duet injects its event helper, feature-detect it here
+       and send {type:"feedback", data:{text:text}} — flipping this button to "Send to session"
+       inside duet. Until then: always return false (copy fallback is the v1 output, and the
+       permanent standalone-tab behavior). */
+    return false;
+  }
+  function copy(){
+    var out = document.getElementById("kit-out"), txt = out.textContent, btn = document.getElementById("kit-copy");
+    if (emitToSession(txt)) return;
+    var ta = document.createElement("textarea"); ta.value = txt;
+    document.body.appendChild(ta); ta.select();
+    var ok = false; try { ok = document.execCommand("copy"); } catch(e){}
+    document.body.removeChild(ta);
+    if (ok){ btn.textContent = "copied ✓"; setTimeout(function(){ btn.textContent = "Copy feedback"; }, 1200); }
+    else { var r = document.createRange(); r.selectNodeContents(out);
+      var s = getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = "press ⌘C"; }
+  }
+  function init(opts){ compileFn = opts.compile;
+    document.getElementById("kit-copy").onclick = copy; recompile(); }
+  return {init:init, stanceEl:stanceEl, validate:validate, el:el, state:state, banner:banner};
+})();
+</script>
+<!-- CRITIQUE-KIT END -->
+</body></html>
