@@ -35,6 +35,46 @@ priority voting with stance presets, and a live-compiled feedback prompt with co
 - **Use for:** explaining an architecture/plan/pipeline and harvesting structured feedback on it.
 - **First used:** 2026-07-04, duet's own architecture review.
 
+### `ui-design-chooser.html`
+Choose between rendered visual design options. Each option is a real, self-contained mockup
+rendered scaled-down (click to zoom), with pick / reject / mixed stances and a note field; the
+compiled output names the chosen option(s) and what to steal from the rest.
+
+- **Data blocks to replace:** `OPTIONS` (id/name/rationale/mockupHTML — `mockupHTML` is an inline,
+  self-contained fragment), plus `<title>`, the `<h1>`, and `.sub`.
+- **Use for:** picking between visual design directions when seeing beats describing.
+- **First used:** 2026-07-04, library v1.
+
+### `sop-map-critique.html`
+Swimlane map of a process — one lane per role, step cards showing inputs / outputs / ⚠ failure
+modes, keep / change / question per step, and a handoff flow line. Works in two modes: reviewing
+an existing SOP, or (all stances blank on a draft) running the design session itself.
+
+- **Data blocks to replace:** `ROLES` (id/name), `STEPS`
+  (id/role/name/desc/inputs/outputs/failure_modes), `HANDOFFS` (from/to), plus `<title>`/`<h1>`/`.sub`.
+- **Use for:** designing or reviewing a standard operating procedure / multi-role process.
+- **First used:** 2026-07-04, library v1.
+
+### `decision-matrix.html`
+Options × weighted criteria decision. Drag the criterion weights and the ranking re-sorts live;
+a sensitivity hint flags which weights can flip the winner; a notes field captures constraints the
+matrix can't hold. Compiled output is a decision rationale (winner, weights, sensitivity, notes).
+
+- **Data blocks to replace:** `OPTIONS` (id/name), `CRITERIA` (id/name/weight/direction), `SCORES`
+  (`{optionId: {criterionId: n}}`), plus `<title>`/`<h1>`/`.sub`.
+- **Use for:** a defensible multi-criteria choice with visible sensitivity.
+- **First used:** 2026-07-04, library v1.
+
+### `doc-review.html`
+Critique any document section by section — each section rendered with its body, keep / change /
+question stance + note, and a live progress counter. The generic fallback when no sharper template
+fits. Compiled output lists §-referenced findings and review progress.
+
+- **Data blocks to replace:** `SECTIONS` (id/title/bodyHTML — `bodyHTML` is trusted inline markup),
+  plus `<title>`/`<h1>`/`.sub`.
+- **Use for:** structured review of a spec, proposal, brief, or any sectioned document.
+- **First used:** 2026-07-04, library v1.
+
 ## Instantiating (for agents)
 
 ```
