@@ -71,7 +71,8 @@ Ship test: a full day of real work in duet with zero mouse usage for pane manage
 
 Goal: duet opens from the dock as a real app; the fragile browser-tab surface (friction log #1/#2) is gone. Pulled forward from M4 by decision 2026-07-04.
 
-- [ ] **Benchmark gate first** *(added 2026-07-06)*: measure input-to-glyph latency of the WebGL xterm renderer inside WKWebView **before** committing — WKWebView WebGL stalls are documented; keep the DOM-renderer fallback hot. If the <5ms budget breaks and can't be recovered, reconsider (Electron measurement, or stay browser+LaunchAgent until it resolves)
+- [x] **Benchmark gate first** *(added 2026-07-06)*: measure input-to-glyph latency of the WebGL xterm renderer inside WKWebView **before** committing — WKWebView WebGL stalls are documented; keep the DOM-renderer fallback hot. If the <5ms budget breaks and can't be recovered, reconsider (Electron measurement, or stay browser+LaunchAgent until it resolves)
+  - **PASSED 2026-07-10** (`public/bench/latency.html` + `bench/wkwebview_bench.swift`, arm64 MacBook): WebGL addon active in WKWebView, zero context losses; write→parsed p95 1ms (budget 5ms); write→frame p50/p95 30/31ms vs Chromium 29.8/30.7ms (parity — both vsync-quantized by the double-rAF measure); 2 MB burst 18 vs 20.5 MB/s, 1 stalled frame each. Caveat: bench window must be visible — WebKit suspends rAF when occluded.
 - [ ] Tauri 2.x shell wrapping the existing client; node server as a **sidecar v1** (`tauri_plugin_shell`) — no Rust PTY rewrite yet (the `portable-pty` port is an M4 decision, taken with sidecar data; refs: `Tnze/tauri-plugin-pty`, `crynta/terax-ai`)
 - [ ] Single-instance guard + "attach to running server" behavior (today's `bin/duet` health-poll logic, promoted)
 - [ ] Dock icon, minimal native menus; badge on canvas activity

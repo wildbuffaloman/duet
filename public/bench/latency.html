@@ -1,0 +1,172 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark light">
+<title>duet renderer latency bench</title>
+<link rel="stylesheet" href="/vendor/xterm.css">
+<style>
+  body { margin: 0; background: #0d1420; color: #e7edf6; font: 13px ui-monospace, Menlo, monospace; }
+  #host { width: 900px; height: 480px; padding: 8px; }
+  #results { white-space: pre-wrap; padding: 8px; }
+</style>
+</head>
+<body>
+<div id="host"></div>
+<div id="results">running…</div>
+<script src="/vendor/xterm.js"></script>
+<script src="/vendor/addon-fit.js"></script>
+<script src="/vendor/addon-webgl.js"></script>
+<script>
+(function () {
+  'use strict';
+  var results = {
+    ua: navigator.userAgent,
+    renderer: 'dom',
+    contextLosses: 0,
+    writeDoneMs: null,   // write() -> parse/buffer done (no paint)
+    writeFrameMs: null,  // write() -> glyph painted (double rAF)
+    burst: null,
+    error: null
+  };
+
+  function report() {
+    var el = document.getElementById('results');
+    el.textContent = JSON.stringify(results, null, 2);
+    el.dataset.done = '1';
+    console.log('BENCH_RESULT ' + JSON.stringify(results));
+    try {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.bench) {
+        window.webkit.messageHandlers.bench.postMessage(JSON.stringify(results));
+      }
+    } catch (e) {}
+  }
+
+  function stats(arr) {
+    var a = arr.slice().sort(function (x, y) { return x - y; });
+    var q = function (p) { return a[Math.min(a.length - 1, Math.floor(p * a.length))]; };
+    return {
+      n: a.length,
+      p50: +q(0.50).toFixed(2),
+      p95: +q(0.95).toFixed(2),
+      p99: +q(0.99).toFixed(2),
+      max: +a[a.length - 1].toFixed(2)
+    };
+  }
+
+  // Same construction as public/app.js createTermBody()
+  var term = new window.Terminal({
+    cursorBlink: true,
+    fontSize: 13,
+    fontFamily: 'ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace',
+    lineHeight: 1.15,
+    scrollback: 8000,
+    allowProposedApi: true
+  });
+  var fit = new window.FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(document.getElementById('host'));
+  fit.fit();
+  try {
+    var gl = new window.WebglAddon.WebglAddon();
+    gl.onContextLoss(function () { results.contextLosses++; });
+    term.loadAddon(gl);
+    results.renderer = 'webgl';
+  } catch (e) {
+    results.renderer = 'dom (webgl threw: ' + e.message + ')';
+  }
+
+  var CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789$%(){}[]<>|/\\~^';
+  function sampleChar(i) { return CHARS[i % CHARS.length]; }
+
+  function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  function writeOnce(ch) {
+    // Resolves with [doneMs, frameMs] for one echo-sized write.
+    return new Promise(function (resolve) {
+      var t0 = performance.now();
+      term.write(ch, function () {
+        var t1 = performance.now();
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            resolve([t1 - t0, performance.now() - t0]);
+          });
+        });
+      });
+    });
+  }
+
+  function burstTest() {
+    // ~2 MB of SGR-colored lines in 64 KB chunks; count stalled frames while it renders.
+    var line = '';
+    for (var c = 0; c < 8; c++) line += '\x1b[3' + (c % 8) + 'm' + CHARS + '\x1b[0m';
+    line += '\r\n';
+    var chunk = '';
+    while (chunk.length < 65536) chunk += line;
+    var total = 0, TARGET = 2 * 1024 * 1024;
+
+    return new Promise(function (resolve) {
+      var frames = 0, stalls = 0, maxGap = 0, last = performance.now(), watching = true;
+      (function frameWatch() {
+        if (!watching) return;
+        var now = performance.now();
+        var gap = now - last;
+        last = now;
+        frames++;
+        if (gap > 32) { stalls++; if (gap > maxGap) maxGap = gap; }
+        requestAnimationFrame(frameWatch);
+      })();
+
+      var t0 = performance.now();
+      (function pump() {
+        if (total >= TARGET) {
+          term.write('', function () {
+            requestAnimationFrame(function () {
+              requestAnimationFrame(function () {
+                watching = false;
+                var secs = (performance.now() - t0) / 1000;
+                resolve({
+                  bytes: total,
+                  secs: +secs.toFixed(2),
+                  mbPerSec: +(total / 1048576 / secs).toFixed(1),
+                  frames: frames,
+                  stalledFrames: stalls,
+                  maxFrameGapMs: +maxGap.toFixed(1)
+                });
+              });
+            });
+          });
+          return;
+        }
+        total += chunk.length;
+        term.write(chunk, pump);
+      })();
+    });
+  }
+
+  (async function main() {
+    try {
+      await delay(300); // let first layout/render settle
+      // warmup
+      for (var w = 0; w < 30; w++) await writeOnce(sampleChar(w));
+      var done = [], frame = [];
+      for (var i = 0; i < 300; i++) {
+        var r = await writeOnce(sampleChar(i));
+        done.push(r[0]);
+        frame.push(r[1]);
+        window.__benchProgress = i + 1; // visible to the polling stub
+        await delay(3); // decouple samples from each other's frames
+      }
+      window.__benchProgress = 'burst';
+      results.writeDoneMs = stats(done);
+      results.writeFrameMs = stats(frame);
+      results.burst = await burstTest();
+    } catch (e) {
+      results.error = String(e && e.stack || e);
+    }
+    report();
+  })();
+})();
+</script>
+</body>
+</html>
