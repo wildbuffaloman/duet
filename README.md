@@ -60,6 +60,19 @@ Performance is duet's #1 requirement: zero perceived terminal latency, and file-
 | Card doesn't appear | The file must match `*.html`, live directly in `$DUET_CANVAS` (no subdirectories), and be self-contained (a strict card sandbox means external URLs won't load anyway). |
 | Nothing at http://127.0.0.1:7433 | duet binds `127.0.0.1` only, by design. It is a local tool; don't expose it. |
 
+## Desktop app (Tauri shell)
+
+`npm run tauri build` produces a real macOS app — `duet.app` + a `.dmg` installer under
+`src-tauri/target/release/bundle/` (arm64). The build stages the sidecar automatically
+(`scripts/stage-sidecar.sh`): the current `node` binary ships as a Tauri externalBin and a
+production copy of `server.js` + `node_modules` + `public/` ships as resources, so the app is
+fully self-contained — the target Mac needs no Node, no npm.
+
+Launch semantics (per M1.5): if a duet server is already listening on `127.0.0.1:7433` the app
+**attaches** to it (and leaves it running on quit); otherwise it **spawns** the bundled sidecar
+(and kills it on quit). Second launches focus the existing window (single-instance).
+The window is the same client `bin/duet-app` opens — one codebase, two shells.
+
 ## Learn more
 
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — the full wire contract (v1): HTTP surface, both WebSocket endpoints, and the canvas-directory protocol.
