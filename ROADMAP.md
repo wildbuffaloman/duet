@@ -73,9 +73,9 @@ Goal: duet opens from the dock as a real app; the fragile browser-tab surface (f
 
 - [x] **Benchmark gate first** *(added 2026-07-06)*: measure input-to-glyph latency of the WebGL xterm renderer inside WKWebView **before** committing — WKWebView WebGL stalls are documented; keep the DOM-renderer fallback hot. If the <5ms budget breaks and can't be recovered, reconsider (Electron measurement, or stay browser+LaunchAgent until it resolves)
   - **PASSED 2026-07-10** (`public/bench/latency.html` + `bench/wkwebview_bench.swift`, arm64 MacBook): WebGL addon active in WKWebView, zero context losses; write→parsed p95 1ms (budget 5ms); write→frame p50/p95 30/31ms vs Chromium 29.8/30.7ms (parity — both vsync-quantized by the double-rAF measure); 2 MB burst 18 vs 20.5 MB/s, 1 stalled frame each. Caveat: bench window must be visible — WebKit suspends rAF when occluded.
-- [ ] Tauri 2.x shell wrapping the existing client; node server as a **sidecar v1** (`tauri_plugin_shell`) — no Rust PTY rewrite yet (the `portable-pty` port is an M4 decision, taken with sidecar data; refs: `Tnze/tauri-plugin-pty`, `crynta/terax-ai`)
-- [ ] Single-instance guard + "attach to running server" behavior (today's `bin/duet` health-poll logic, promoted)
-- [ ] Dock icon, minimal native menus; badge on canvas activity
+- [x] Tauri 2.x shell wrapping the existing client; node server as a **sidecar v1** (`tauri_plugin_shell`) — no Rust PTY rewrite yet (the `portable-pty` port is an M4 decision, taken with sidecar data; refs: `Tnze/tauri-plugin-pty`, `crynta/terax-ai`) — **shipped 2026-07-10** (`src-tauri/`, staging via `scripts/stage-sidecar.sh`: node binary as externalBin + prod server copy as resources; window loads `http://127.0.0.1:7433`)
+- [x] Single-instance guard + "attach to running server" behavior (today's `bin/duet` health-poll logic, promoted) — **shipped 2026-07-10**, smoke-tested both paths: attach leaves an external server alive on quit; spawn kills its own sidecar on quit
+- [x] Dock icon (generated set from `design/icon/duet-icon-1024.png`) + default native menus — **shipped 2026-07-10**; badge on canvas activity **deferred** (needs M3a events)
 - [ ] Optional polish (if cheap): quake-mode global hotkey; drag-to-reorder splits
 
 Multi-window, auto-update, and brew cask stay in M4.

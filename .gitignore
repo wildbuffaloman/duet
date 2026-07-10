@@ -2,3 +2,7 @@ node_modules/
 .DS_Store
 *.log
 bench/wkwebview_bench
+src-tauri/target/
+src-tauri/resources/
+src-tauri/binaries/
+src-tauri/gen/
