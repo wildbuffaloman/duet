@@ -89,3 +89,52 @@ test('an image dropped into the canvas dir arrives as an <img> card, and its rem
 
   ws.close();
 });
+
+test('an import message copies a file in and broadcasts it as a card; a delete removes it', async (t) => {
+  const PORT2 = 7602;
+  const SESSION2 = 'test-fb2';
+  const CANVAS2 = path.join(os.homedir(), '.duet', 'canvas', SESSION2);
+
+  const srcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'duet-src-'));
+  fs.writeFileSync(path.join(srcDir, 'my shot.png'), Buffer.from(PNG_1X1_B64, 'base64'));
+
+  fs.rmSync(CANVAS2, { recursive: true, force: true });
+  fs.mkdirSync(CANVAS2, { recursive: true });
+
+  const srv = spawn('node', ['server.js'], {
+    cwd: path.join(__dirname, '..'),
+    env: { ...process.env, DUET_PORT: String(PORT2) },
+    stdio: 'ignore',
+  });
+  t.after(() => {
+    srv.kill();
+    fs.rmSync(CANVAS2, { recursive: true, force: true });
+    fs.rmSync(srcDir, { recursive: true, force: true });
+  });
+
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    try { if ((await fetch(`http://127.0.0.1:${PORT2}/health`)).ok) break; } catch (e) { /* not up */ }
+    if (Date.now() > deadline) throw new Error('server did not become healthy');
+    await sleep(50);
+  }
+
+  const ws = new WebSocket(`ws://127.0.0.1:${PORT2}/canvas?session=${SESSION2}`);
+  await new Promise((res, rej) => { ws.once('open', res); ws.once('error', rej); });
+  await nextMessage(ws, (m) => m.type === 'snapshot');
+  await sleep(150);
+
+  ws.send(JSON.stringify({ type: 'import', path: path.join(srcDir, 'my shot.png') }));
+
+  const added = await nextMessage(ws, (m) => m.type === 'card');
+  assert.equal(added.card.id, 'my-shot.png', 'the imported name must be sanitized');
+  assert.match(added.card.html, /<img[^>]+src="data:image\/png;base64,/);
+
+  ws.send(JSON.stringify({ type: 'delete', id: 'my-shot.png' }));
+
+  const removed = await nextMessage(ws, (m) => m.type === 'remove');
+  assert.equal(removed.id, 'my-shot.png');
+  assert.ok(!fs.existsSync(path.join(CANVAS2, 'my-shot.png')), 'the file must actually be gone');
+
+  ws.close();
+});

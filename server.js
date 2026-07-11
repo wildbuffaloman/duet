@@ -12,7 +12,14 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 const pty = require('@lydell/node-pty');
 const chokidar = require('chokidar');
-const { buildCard, snapshotCards, isCardFile, cardIdFor } = require('./lib/cards');
+const {
+  buildCard,
+  snapshotCards,
+  isCardFile,
+  cardIdFor,
+  importIntoCanvas,
+  findCardFile,
+} = require('./lib/cards');
 
 const PORT = parseInt(process.env.DUET_PORT, 10) || 7433;
 const HOST = '127.0.0.1';
@@ -250,6 +257,33 @@ canvasWss.on('connection', (ws, req) => {
 
   const entry = acquireWatcher(sessionId);
   entry.subscribers.add(ws);
+
+  // Inbound canvas mutations. This socket already passed the Origin check on upgrade
+  // and its sessionId is validated, so it is the ONLY channel we accept filesystem
+  // mutations on — no HTTP route is opened (a route would have no Origin check, handing
+  // any web page an arbitrary-file-copy primitive on localhost). Neither message
+  // replies: the directory watcher turns the file change into the usual broadcast.
+  ws.on('message', (data) => {
+    let msg;
+    try {
+      msg = JSON.parse(data.toString());
+    } catch (e) {
+      return;
+    }
+    if (!msg || typeof msg !== 'object') return;
+
+    if (msg.type === 'import' && typeof msg.path === 'string') {
+      importIntoCanvas(canvasDir, msg.path);
+      return;
+    }
+    if (msg.type === 'delete' && typeof msg.id === 'string') {
+      const name = findCardFile(canvasDir, msg.id);
+      if (!name) return; // unknown id — silent no-op
+      try {
+        fs.unlinkSync(path.join(canvasDir, name));
+      } catch (e) { /* already gone */ }
+    }
+  });
 
   ws.on('close', () => releaseWatcher(sessionId, ws));
   ws.on('error', () => { /* close handler does cleanup */ });
