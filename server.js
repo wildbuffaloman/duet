@@ -12,14 +12,13 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 const pty = require('@lydell/node-pty');
 const chokidar = require('chokidar');
+const { buildCard, snapshotCards, isCardFile, cardIdFor } = require('./lib/cards');
 
 const PORT = parseInt(process.env.DUET_PORT, 10) || 7433;
 const HOST = '127.0.0.1';
 
 const CANVAS_ROOT = path.join(os.homedir(), '.duet', 'canvas');
 const SESSION_RE = /^[a-z0-9-]{1,32}$/;
-const CARD_FILE_RE = /^[A-Za-z0-9._-]+\.html$/;
-const MAX_CARD_BYTES = 2 * 1024 * 1024; // cards above this are skipped, not truncated
 
 // ---------------------------------------------------------------------------
 // HTTP
@@ -47,56 +46,10 @@ function canvasDirFor(sessionId) {
   return path.join(CANVAS_ROOT, sessionId);
 }
 
-function stripTags(s) {
-  return s.replace(/<[^>]*>/g, '').trim();
-}
-
-function buildCard(canvasDir, filename) {
-  // SECURITY: only plain filenames directly inside canvasDir.
-  if (!CARD_FILE_RE.test(filename)) return null;
-  const full = path.join(canvasDir, filename);
-  let html, stat;
-  try {
-    stat = fs.statSync(full);
-    if (!stat.isFile()) return null;
-    if (stat.size > MAX_CARD_BYTES) return null;
-    html = fs.readFileSync(full, 'utf8');
-  } catch (e) {
-    return null;
-  }
-  const id = filename.slice(0, -'.html'.length);
-  let title = id;
-  const t = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  if (t && stripTags(t[1])) {
-    title = stripTags(t[1]);
-  } else {
-    const h = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-    if (h && stripTags(h[1])) title = stripTags(h[1]);
-  }
-  return { id, title, mtime: stat.mtimeMs, html };
-}
-
 function clampDim(v, fallback) {
   const n = parseInt(v, 10);
   if (!Number.isInteger(n)) return fallback;
   return Math.min(Math.max(n, 2), 1000);
-}
-
-function snapshotCards(canvasDir) {
-  let names;
-  try {
-    names = fs.readdirSync(canvasDir);
-  } catch (e) {
-    return [];
-  }
-  const cards = [];
-  for (const name of names) {
-    if (!CARD_FILE_RE.test(name)) continue;
-    const card = buildCard(canvasDir, name);
-    if (card) cards.push(card);
-  }
-  cards.sort((a, b) => a.mtime - b.mtime);
-  return cards;
 }
 
 // ---------------------------------------------------------------------------
@@ -253,7 +206,7 @@ function acquireWatcher(sessionId) {
 
   const onAddOrChange = (filePath) => {
     const name = path.basename(filePath);
-    if (!CARD_FILE_RE.test(name)) return;
+    if (!isCardFile(name)) return;
     if (path.dirname(path.resolve(filePath)) !== path.resolve(canvasDir)) return;
     const card = buildCard(canvasDir, name);
     if (card) broadcast(entry, { type: 'card', card });
@@ -263,8 +216,8 @@ function acquireWatcher(sessionId) {
   watcher.on('change', onAddOrChange);
   watcher.on('unlink', (filePath) => {
     const name = path.basename(filePath);
-    if (!CARD_FILE_RE.test(name)) return;
-    broadcast(entry, { type: 'remove', id: name.slice(0, -'.html'.length) });
+    if (!isCardFile(name)) return;
+    broadcast(entry, { type: 'remove', id: cardIdFor(name) });
   });
   watcher.on('error', () => { /* keep watching; never log on data path */ });
 

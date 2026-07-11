@@ -45,15 +45,36 @@ This is the beautiful part: **THE CANVAS IS A DIRECTORY.** Rendering is writing 
 | Filesystem action | Canvas effect |
 | --- | --- |
 | Write `<name>.html` into `$DUET_CANVAS` | A card appears in every canvas pane of the session (< 100ms) |
+| Write `<name>.<png\|jpg\|jpeg\|gif\|webp\|svg>` into `$DUET_CANVAS` | Same — the image appears as a card (see *Image cards* below) |
 | Overwrite the same file | The card updates **in place** (position and identity preserved) |
 | Delete the file | The card is removed |
 
 Card semantics:
 
-- **id** — the filename without `.html`. The id is the card's identity: same filename ⇒ same card.
+- **id** — for an `.html` file, the filename without `.html`; for an image, the **full filename** (see *Image cards*). The id is the card's identity: same filename ⇒ same card.
 - **title** — the `<title>` text if present; else the first `<h1>` text; else the id.
 - **content** — the full file contents, rendered as a self-contained HTML document. Files must inline all CSS/JS; external URLs are not honored.
 - **order** — cards are ordered by mtime, oldest first. Overwriting a card refreshes its content but is delivered as an update, not a re-mount.
+
+### Image cards
+
+`cp chart.png "$DUET_CANVAS"` renders it. No conversion step, no CLI — the file *is* the card,
+exactly like HTML.
+
+The server wraps the image in a minimal self-contained document whose `<img>` carries the bytes as
+a **`data:` URI**. This is deliberate, not a shortcut: cards render in `sandbox="allow-scripts"`
+iframes with no same-origin, and the protocol does not honor external URLs — so a `data:` URI is
+the only form that needs no new HTTP route, no sandbox relaxation, and no client change. An image
+card is therefore a normal card in every respect; nothing downstream knows the difference.
+
+- **id** — the **full filename**, extension included (`chart.png`). Two reasons: stripping a
+  4-letter extension with the `.html` rule would mangle it (`chart.png` → `char`), and keeping the
+  extension guarantees `chart.png` can never collide with `chart.html`. `.html` id derivation is
+  unchanged, so §5.1 card→card links keep working.
+- **title** — the filename without its extension (`chart`).
+- **size cap** — images above **8 MiB** are skipped (base64 inflates ~33%; this bounds the WS frame
+  while still covering Retina screenshots). HTML cards keep their own 2 MiB cap.
+- **SVG** — served as `image/svg+xml` inside an `<img>`, where scripts never execute per spec.
 
 ## 3. WS endpoint 1 — `/term` (terminal ↔ PTY)
 
