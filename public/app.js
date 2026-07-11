@@ -515,8 +515,10 @@
       focus:function(){ try { term.focus(); } catch(e){} },
       // term.paste() routes through the same onData handler that sends input bytes to the
       // PTY, and honors bracketed paste — so the text lands as literal, editable content
-      // in the agent's input box instead of being interpreted.
-      paste:function(text){ try { term.paste(text); } catch(e){} },
+      // in the agent's input box instead of being interpreted. Strip control bytes at this
+      // boundary too (not only in shellEscape): defense in depth for any future caller, so a
+      // filename can't smuggle an escape sequence past bracketed paste.
+      paste:function(text){ try { term.paste(DuetShellEscape.stripControlBytes(text)); } catch(e){} },
       fitSoon:fitSoon,
       setSessionColor:function(base){ try { term.options.theme = termTheme(base); } catch(e){} },
       note:function(msg){ term.write("\r\n\x1b[2m" + msg + "\x1b[0m\r\n"); },

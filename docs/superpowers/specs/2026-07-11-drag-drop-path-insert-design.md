@@ -135,6 +135,11 @@ scrutiny. Both ride the **existing canvas WebSocket**, deliberately:
 - The source path originates from a real OS drag-drop the user physically performed.
 - **Delete can only unlink a name read out of that session's canvas dir** (`findCardFile`), so it
   cannot be pointed at a file elsewhere on disk no matter what id is sent.
+- **Terminal control bytes are stripped before a path is pasted** (`stripControlBytes`, applied in
+  both `shellEscape` and the terminal-paste boundary). A filename may legally embed ESC on
+  macOS/Linux; pasted raw it could smuggle the bracketed-paste END marker (`ESC[201~`) past the
+  paste boundary and be interpreted as terminal input. Shell quoting protects the shell; this
+  protects the terminal. (Security review 2026-07-11.)
 
 ## Testing
 
