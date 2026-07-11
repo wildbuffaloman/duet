@@ -45,6 +45,37 @@
   var termCtls = {};     // winId -> terminal controller
   var renderCtls = {};   // winId -> render controller
   var canvasConns = {};  // sid -> shared /canvas connection (refcounted)
+
+  /* ---------- drag & drop (FB-2) ----------
+     Only native code can see a dropped file's real path, so src-tauri catches the OS
+     drop and calls this with CSS-pixel coordinates (it divides by the scale factor —
+     Tauri reports physical pixels, elementFromPoint wants CSS). The pane hit-test lives
+     here because the layout tree is client state. In the browser this is simply never
+     called: a drop is an inert no-op, by design. */
+  window.__duetDrop = function(paths, x, y){
+    if(!paths || !paths.length) return;
+    var hit = document.elementFromPoint(x, y);
+    var pane = hit && hit.closest ? hit.closest("[data-win]") : null;
+    if(!pane) return; // dropped on chrome, not a pane
+
+    var winId = pane.dataset.win, sid = pane.dataset.session;
+
+    if(pane.dataset.type === "term"){
+      var t = termCtls[winId];
+      if(!t) return;
+      t.focus();
+      // Trailing space so you can keep typing or drop again. Never a newline — nothing executes.
+      t.paste(DuetShellEscape.shellEscapeAll(paths) + " ");
+      return;
+    }
+
+    // render pane -> import each file as a card, over that session's already-open canvas WS
+    var conn = canvasConns[sid];
+    if(!conn || !conn.ws || conn.ws.readyState !== 1) return;
+    paths.forEach(function(p){
+      conn.ws.send(JSON.stringify({ type:"import", path:p }));
+    });
+  };
   var dragSrc = null;
 
   function makeSession(){
@@ -482,6 +513,10 @@
 
     termCtls[w.id] = {
       focus:function(){ try { term.focus(); } catch(e){} },
+      // term.paste() routes through the same onData handler that sends input bytes to the
+      // PTY, and honors bracketed paste — so the text lands as literal, editable content
+      // in the agent's input box instead of being interpreted.
+      paste:function(text){ try { term.paste(text); } catch(e){} },
       fitSoon:fitSoon,
       setSessionColor:function(base){ try { term.options.theme = termTheme(base); } catch(e){} },
       note:function(msg){ term.write("\r\n\x1b[2m" + msg + "\x1b[0m\r\n"); },
@@ -580,12 +615,23 @@
       }
     }
   });
-  function buildCardEl(cd){
+  function buildCardEl(cd, sid){
     var art = el("article", "card"); art.dataset.card = cd.id;
     var head = el("div", "card-head");
     head.appendChild(el("span", "card-id", "◪ " + esc(cd.id)));
     head.appendChild(el("span", "card-title", esc(cd.title || cd.id)));
     head.appendChild(el("span", "badge", esc(fmtTime(cd.mtime))));
+    var del = el("button", "card-del", "✕");
+    del.title = "delete card";
+    del.onclick = function(e){
+      e.stopPropagation();
+      var conn = canvasConns[sid];
+      if(!conn || !conn.ws || conn.ws.readyState !== 1) return;
+      // The server unlinks the file; the existing chokidar unlink -> "remove" broadcast
+      // takes the card out of every pane in the session. No optimistic removal.
+      conn.ws.send(JSON.stringify({ type:"delete", id:cd.id }));
+    };
+    head.appendChild(del);
     art.appendChild(head);
     var body = el("div", "card-body");
     var frame = document.createElement("iframe");
@@ -735,13 +781,13 @@
       scroll.innerHTML = "";
       if(!cards.length){ scroll.appendChild(emptyState()); return; }
       cards.forEach(function(cd){
-        var c = buildCardEl(cd); c.dataset.mtime = String(cd.mtime); c.style.animation = "none";
+        var c = buildCardEl(cd, w.session); c.dataset.mtime = String(cd.mtime); c.style.animation = "none";
         scroll.appendChild(c);
       });
     }
     function listCard(cd){
       var em = scroll.querySelector(".empty"); if(em) em.remove();
-      var fresh = buildCardEl(cd); fresh.dataset.mtime = String(cd.mtime);
+      var fresh = buildCardEl(cd, w.session); fresh.dataset.mtime = String(cd.mtime);
       var old = cardIn(cd.id);
       if(old){
         var st = scroll.scrollTop;
