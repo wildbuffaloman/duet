@@ -31,21 +31,11 @@
 html,body { height:100%; }
 body { margin:0; background:var(--shell); color:var(--chrome-ink); font-family:var(--mono); -webkit-font-smoothing:antialiased; }
 
-.app { height:100dvh; display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; }
+.app { height:100dvh; display:grid; grid-template-rows:auto minmax(0,1fr); }
 
-/* ---- top chrome ---- */
-.topbar { display:flex; align-items:center; gap:14px; padding:10px 16px; background:var(--chrome); border-bottom:1px solid var(--hair); }
-.dot-row{ display:inline-flex; gap:6px; margin-right:4px; }
-.dot{ width:10px;height:10px;border-radius:50%; }
-.dot.a{background:#e0685f;} .dot.b{background:#e5b24a;} .dot.c{background:#58c07f;}
-.wordmark{ font-size:16px; font-weight:700; letter-spacing:.5px; }
-.wordmark b{ color:var(--card-faint); } .wordmark .m{ color:var(--card-ink); }
-.tagline{ font-size:11.5px; color:var(--chrome-dim); padding-left:12px; border-left:1px solid var(--hair); }
+/* ---- chrome ---- */
 .spacer{ flex:1; }
-.sess-legend{ display:flex; gap:12px; align-items:center; font-size:11px; color:var(--chrome-dim); flex-wrap:wrap; }
-.sess-legend .s{ display:inline-flex; align-items:center; gap:6px; letter-spacing:.2px; }
-.sess-legend .sd{ width:9px;height:9px;border-radius:3px; }
-.theme-btn{ font:11px var(--mono); letter-spacing:.4px; color:var(--chrome-dim); background:transparent; border:1px solid var(--hair); border-radius:7px; padding:6px 10px; cursor:pointer; }
+.theme-btn{ font:11px var(--mono); letter-spacing:.4px; color:var(--chrome-dim); background:transparent; border:1px solid var(--hair); border-radius:7px; padding:5px 9px; cursor:pointer; }
 .theme-btn:hover{ color:var(--chrome-ink); border-color:var(--chrome-dim); }
 .theme-btn:focus-visible{ outline:2px solid var(--chrome-dim); outline-offset:2px; }
 
@@ -191,10 +181,6 @@ body.seam-drag{ user-select:none; }
 .pop .mk:focus-visible{ outline:2px solid var(--chrome-dim); outline-offset:1px; }
 
 /* ---- footer ---- */
-.footer{ padding:8px 16px; background:var(--chrome); border-top:1px solid var(--hair); display:flex; gap:16px; align-items:center; font-size:11px; color:var(--chrome-dim); flex-wrap:wrap; }
-.footer .k{ color:var(--chrome-ink); }
-.footer .spacer{ flex:1; }
-
 /* ---- toast ---- */
 .toast{ position:fixed; left:50%; bottom:54px; transform:translateX(-50%) translateY(10px); background:var(--card-ink); color:var(--card); font:12px var(--mono); padding:8px 14px; border-radius:8px; opacity:0; pointer-events:none; transition:opacity .2s, transform .2s; z-index:50; box-shadow:var(--shadow); }
 .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }

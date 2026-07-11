@@ -885,11 +885,15 @@
 
   /* ---------- chrome ---------- */
   function updateChrome(){
-    var lg = document.getElementById("sessLegend"); lg.innerHTML = "";
-    Object.keys(sessions).forEach(function(sid){
-      var s = sessions[sid];
-      lg.appendChild(el("span", "s", '<span class="sd" style="background:' + s.base + '"></span>' + esc(sid) + ' ' + esc(s.name)));
-    });
+    // sessLegend lived in the removed topbar; guard so init doesn't throw if it's absent.
+    var lg = document.getElementById("sessLegend");
+    if(lg){
+      lg.innerHTML = "";
+      Object.keys(sessions).forEach(function(sid){
+        var s = sessions[sid];
+        lg.appendChild(el("span", "s", '<span class="sd" style="background:' + s.base + '"></span>' + esc(sid) + ' ' + esc(s.name)));
+      });
+    }
     var fi = document.getElementById("focusInfo");
     if(focused && windows[focused]){
       var w = windows[focused];

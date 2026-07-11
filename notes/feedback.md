@@ -20,3 +20,8 @@ Landmine the tests caught: card ids. `chart.png`.slice(0, -'.html'.length) === `
 extension-strip mangles image names, and stripping the extension at all would let `chart.png`
 collide with `chart.html`. Images therefore keep their **full filename** as id; `.html` id
 derivation is untouched so PROTOCOL §5.1 card→card links keep resolving.
+
+| 4 | 2026-07-11 | Remove redundant top "duet" header bar (fake traffic-light dots + wordmark duplicate the native macOS title bar) | The app draws its own window chrome on top of native decorations → doubled close/min/fullscreen controls + wasted vertical space. | Delete the header element; native title bar keeps window controls + drag. Relocate any real controls it holds (theme toggle?) into the kept toolbar. | S | open |
+| 5 | 2026-07-11 | Remove the legend/help bar (terminal=…/render=… + ⌘D hints) | Onboarding legend eats vertical space; the ⌘D hints are aspirational (keyboard splits are M1, not built yet). | Delete it. Keep the functional toolbar (session · reset layout · split ⊞/⊟ · seam hints). Maximize canvas area. | S | open |
+
+## FB-2 — VERIFIED WORKING 2026-07-11: user dragged a real screenshot onto a pane and it loaded. Manual drag test passed.
