@@ -12,6 +12,8 @@ const {
   isCardFile,
   cardIdFor,
   findCardFile,
+  sanitizeCardName,
+  importIntoCanvas,
   MAX_IMAGE_BYTES,
 } = require('../lib/cards');
 
@@ -167,4 +169,66 @@ test('findCardFile can never return a name outside the directory', () => {
   // resolves to nothing — escaping is structurally impossible, not just validated.
   assert.equal(findCardFile(dir, '../../../etc/passwd'), null);
   assert.equal(findCardFile(dir, '..'), null);
+});
+
+// ---------------------------------------------------------------------------
+// FB-2 — importing a dropped file into a canvas dir
+// ---------------------------------------------------------------------------
+
+test('sanitizeCardName makes a real screenshot name card-safe, keeping the extension', () => {
+  assert.equal(
+    sanitizeCardName('Screen Shot 2026-07-11 at 10.30.00.png'),
+    'Screen-Shot-2026-07-11-at-10.30.00.png'
+  );
+});
+
+test('sanitizeCardName collapses unsafe runs and trims dashes', () => {
+  assert.equal(sanitizeCardName('  wild   name!!.png'), 'wild-name.png');
+});
+
+test('importIntoCanvas copies an image in under a sanitized name', () => {
+  const src = tmpCanvas();
+  const dst = tmpCanvas();
+  write(src, 'my shot.png', Buffer.from(PNG_1X1_B64, 'base64'));
+
+  const name = importIntoCanvas(dst, path.join(src, 'my shot.png'));
+
+  assert.equal(name, 'my-shot.png');
+  assert.ok(fs.existsSync(path.join(dst, 'my-shot.png')));
+  assert.ok(buildCard(dst, 'my-shot.png'), 'the copy must be renderable as a card');
+});
+
+test('importIntoCanvas refuses a file type the canvas cannot render', () => {
+  const src = tmpCanvas();
+  const dst = tmpCanvas();
+  write(src, 'notes.txt', 'plain');
+
+  assert.equal(importIntoCanvas(dst, path.join(src, 'notes.txt')), null);
+});
+
+test('importIntoCanvas refuses an image over the size cap', () => {
+  const src = tmpCanvas();
+  const dst = tmpCanvas();
+  write(src, 'huge.png', Buffer.alloc(MAX_IMAGE_BYTES + 1));
+
+  assert.equal(importIntoCanvas(dst, path.join(src, 'huge.png')), null);
+});
+
+test('importIntoCanvas cannot be made to write outside the canvas dir', () => {
+  const src = tmpCanvas();
+  const dst = tmpCanvas();
+  write(src, 'ok.png', Buffer.from(PNG_1X1_B64, 'base64'));
+
+  // basename() strips any traversal in the source path; the destination is always
+  // a bare name inside dst.
+  const name = importIntoCanvas(dst, path.join(src, '..', path.basename(src), 'ok.png'));
+
+  assert.equal(name, 'ok.png');
+  assert.ok(fs.existsSync(path.join(dst, 'ok.png')));
+});
+
+test('importIntoCanvas returns null for a missing source', () => {
+  const dst = tmpCanvas();
+
+  assert.equal(importIntoCanvas(dst, '/nope/missing.png'), null);
 });
