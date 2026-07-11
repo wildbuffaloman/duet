@@ -56,6 +56,21 @@ Card semantics:
 - **content** — the full file contents, rendered as a self-contained HTML document. Files must inline all CSS/JS; external URLs are not honored.
 - **order** — cards are ordered by mtime, oldest first. Overwriting a card refreshes its content but is delivered as an update, not a re-mount.
 
+### Inbound canvas messages (client → server)
+
+The `/canvas` socket accepts two messages. It is the **only** channel for canvas mutation: it is
+already Origin-checked on upgrade and session-scoped, so no HTTP file endpoint is opened (a route
+would carry no Origin check and would hand any web page an arbitrary-file-copy primitive on
+localhost).
+
+| Message | Effect |
+| --- | --- |
+| `{"type":"import","path":"<abs path>"}` | Copies the file into the session's canvas dir under a **sanitized** name (`Screen Shot 2026.png` → `Screen-Shot-2026.png`). Refused unless it is a renderable card type within its size cap. |
+| `{"type":"delete","id":"<card id>"}` | Resolves the id to a file **by reading the canvas dir** and unlinks it — so only a name that actually exists in that directory can ever be removed. Unknown ids are a silent no-op. |
+
+Neither sends a reply: the directory watcher turns the resulting file change into the usual `card` /
+`remove` broadcast, so every pane in the session stays in sync for free.
+
 ### Image cards
 
 `cp chart.png "$DUET_CANVAS"` renders it. No conversion step, no CLI — the file *is* the card,

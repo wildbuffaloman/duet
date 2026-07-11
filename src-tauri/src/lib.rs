@@ -4,7 +4,9 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use tauri::path::BaseDirectory;
-use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    DragDropEvent, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
@@ -33,11 +35,46 @@ fn server_healthy(port: u16) -> bool {
 
 fn create_main_window(handle: &tauri::AppHandle) {
     let url: tauri::Url = format!("http://127.0.0.1:{PORT}").parse().unwrap();
-    WebviewWindowBuilder::new(handle, "main", WebviewUrl::External(url))
+    let window = WebviewWindowBuilder::new(handle, "main", WebviewUrl::External(url))
         .title("duet")
         .inner_size(1440.0, 900.0)
         .build()
         .expect("failed to create duet window");
+
+    // Drag & drop (FB-2). Only native code can read a dropped file's real path — the whole
+    // reason this lives in Rust. We stay a dumb transport: hand the paths and the cursor
+    // position to the page and let JS decide what they mean, because the pane hit-test needs
+    // the layout tree, which is client state.
+    let target = window.clone();
+    window.on_window_event(move |event| {
+        let WindowEvent::DragDrop(DragDropEvent::Drop { paths, position }) = event else {
+            return;
+        };
+
+        // PHYSICAL -> CSS pixels. elementFromPoint() takes CSS pixels; on a 2x Retina
+        // display, skipping this silently hit-tests the wrong pane — and would still look
+        // correct on a 1x external display.
+        let scale = target.scale_factor().unwrap_or(1.0);
+        let x = position.x / scale;
+        let y = position.y / scale;
+
+        let list: Vec<String> = paths
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+
+        // SECURITY: a filename is attacker-influenceable text going into JavaScript, so it is
+        // serialized with serde_json — never concatenated. That emits a properly escaped JSON
+        // array literal, so quotes, backslashes, newlines or "</script>" in a filename cannot
+        // break out of it. This is Tauri's eval (inject JS into our OWN page), not a JS eval()
+        // of untrusted input: no dropped content is ever evaluated as code.
+        let json = serde_json::to_string(&list).unwrap_or_else(|_| "[]".to_string());
+
+        // eval() needs no IPC capability and works against the remote URL this window loads
+        // (http://127.0.0.1:7433), where __TAURI__ injection would not.
+        let js = format!("window.__duetDrop && window.__duetDrop({json}, {x}, {y});");
+        let _ = target.eval(&js);
+    });
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -688,10 +688,10 @@ fn create_main_window(handle: &tauri::AppHandle) {
 
 - [ ] **Step 2: Compile**
 
-Run: `cd src-tauri && cargo check`
-Expected: compiles clean.
+Run: `cd src-tauri && PATH="$HOME/.cargo/bin:$PATH" cargo check`
+Expected: compiles clean. (`cargo` is not on the default shell PATH — rustup installs to `~/.cargo/bin`.)
 
-If `webview.scale_factor()` does not resolve, the accessor is on the window: use `webview.window().scale_factor().unwrap_or(1.0)`. If the match complains that `DragDropEvent` is `#[non_exhaustive]`, the `if let` above already handles that (it matches one variant and ignores the rest) — no catch-all arm is needed.
+**API correction (found during execution):** `WebviewWindowBuilder::on_drag_drop_event` **does not exist** in Tauri 2.11. Drag-drop surfaces as `WindowEvent::DragDrop(DragDropEvent)` and is consumed with `on_window_event` on the **built window**, not the builder — so build the window first, clone the handle, then register. The code block above is the corrected, compiling version. Imports needed: `tauri::{DragDropEvent, WindowEvent, ...}`.
 
 - [ ] **Step 3: Commit**
 
