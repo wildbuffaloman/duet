@@ -6,7 +6,14 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { buildCard, snapshotCards, isCardFile, cardIdFor, MAX_IMAGE_BYTES } = require('../lib/cards');
+const {
+  buildCard,
+  snapshotCards,
+  isCardFile,
+  cardIdFor,
+  findCardFile,
+  MAX_IMAGE_BYTES,
+} = require('../lib/cards');
 
 // A real 1x1 PNG. Content doesn't matter to buildCard (it base64s the bytes verbatim),
 // but using genuine image bytes keeps the fixture honest.
@@ -126,4 +133,38 @@ test('snapshotCards returns html and image cards together, mtime-ascending', () 
   const cards = snapshotCards(dir);
 
   assert.deepEqual(cards.map((c) => c.id), ['first', 'second.png']);
+});
+
+// ---------------------------------------------------------------------------
+// FB-3 — resolving a card id back to its file (for delete)
+// ---------------------------------------------------------------------------
+
+test('findCardFile resolves an html id to its file', () => {
+  const dir = tmpCanvas();
+  write(dir, 'report.html', '<!doctype html><title>R</title>');
+
+  assert.equal(findCardFile(dir, 'report'), 'report.html');
+});
+
+test('findCardFile resolves an image id (which is the full filename)', () => {
+  const dir = tmpCanvas();
+  write(dir, 'chart.png', Buffer.from(PNG_1X1_B64, 'base64'));
+
+  assert.equal(findCardFile(dir, 'chart.png'), 'chart.png');
+});
+
+test('findCardFile returns null for an unknown id', () => {
+  const dir = tmpCanvas();
+
+  assert.equal(findCardFile(dir, 'nope'), null);
+});
+
+test('findCardFile can never return a name outside the directory', () => {
+  const dir = tmpCanvas();
+  write(dir, 'a.html', '<!doctype html><title>A</title>');
+
+  // Only names actually read out of `dir` are candidates, so a traversal id
+  // resolves to nothing — escaping is structurally impossible, not just validated.
+  assert.equal(findCardFile(dir, '../../../etc/passwd'), null);
+  assert.equal(findCardFile(dir, '..'), null);
 });
