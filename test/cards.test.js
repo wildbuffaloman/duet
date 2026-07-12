@@ -14,6 +14,7 @@ const {
   findCardFile,
   sanitizeCardName,
   importIntoCanvas,
+  isPathUnderHome,
   MAX_IMAGE_BYTES,
 } = require('../lib/cards');
 
@@ -231,4 +232,55 @@ test('importIntoCanvas returns null for a missing source', () => {
   const dst = tmpCanvas();
 
   assert.equal(importIntoCanvas(dst, '/nope/missing.png'), null);
+});
+
+// ---------------------------------------------------------------------------
+// Task 3 — fail-closed $HOME symlink guard
+// ---------------------------------------------------------------------------
+
+test('isPathUnderHome accepts paths under home, rejects escapes', () => {
+  assert.strictEqual(isPathUnderHome('/Users/x/Documents/a.html', '/Users/x'), true);
+  assert.strictEqual(isPathUnderHome('/Users/x', '/Users/x'), true);
+  assert.strictEqual(isPathUnderHome('/etc/passwd', '/Users/x'), false);
+  assert.strictEqual(isPathUnderHome('/Users/xevil/a', '/Users/x'), false); // prefix, not child
+});
+
+function tmpHomeDirs() {
+  // realpath: macOS /var/folders resolves to /private/var/folders — without this,
+  // a symlink target under the tmpdir home would fail the startsWith(home) check.
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'duet-home-')));
+  const canvasDir = path.join(home, '.duet', 'canvas', 's1');
+  fs.mkdirSync(canvasDir, { recursive: true });
+  return { home, canvasDir };
+}
+
+test('buildCard renders a symlink whose target is under home', () => {
+  const { home, canvasDir } = tmpHomeDirs();
+  const target = path.join(home, 'Documents', 'real.html');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, '<title>Real</title><h1>Real</h1>');
+  fs.symlinkSync(target, path.join(canvasDir, 'real.html'));
+
+  const card = buildCard(canvasDir, 'real.html', { homeRoot: home });
+  assert.strictEqual(card.title, 'Real');
+  assert.match(card.html, /<h1>Real<\/h1>/);
+});
+
+test('buildCard blocks a symlink whose target escapes home — never leaks contents', () => {
+  const { home, canvasDir } = tmpHomeDirs();
+  const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'duet-outside-')));
+  const secret = path.join(outside, 'secret.html');
+  fs.writeFileSync(secret, '<title>SECRET</title>TOP-SECRET-BODY');
+  fs.symlinkSync(secret, path.join(canvasDir, 'secret.html'));
+
+  const card = buildCard(canvasDir, 'secret.html', { homeRoot: home });
+  assert.strictEqual(card.id, 'secret');
+  assert.match(card.html, /blocked: link escapes home/);
+  assert.doesNotMatch(card.html, /TOP-SECRET-BODY/);
+});
+
+test('buildCard returns null for a broken symlink', () => {
+  const { home, canvasDir } = tmpHomeDirs();
+  fs.symlinkSync(path.join(home, 'gone.html'), path.join(canvasDir, 'dangling.html'));
+  assert.strictEqual(buildCard(canvasDir, 'dangling.html', { homeRoot: home }), null);
 });
