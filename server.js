@@ -42,7 +42,13 @@ app.get('/vendor/xterm.js', (req, res) => res.sendFile(vendor('@xterm/xterm/lib/
 app.get('/vendor/addon-fit.js', (req, res) => res.sendFile(vendor('@xterm/addon-fit/lib/addon-fit.js')));
 app.get('/vendor/addon-webgl.js', (req, res) => res.sendFile(vendor('@xterm/addon-webgl/lib/addon-webgl.js')));
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  // The app iterates on its own frontend live; a webview must never serve a stale
+  // app.js/index.html from cache (that shipped a fixed bug as still-broken once).
+  setHeaders: (res, filePath) => {
+    if (/\.(html|js)$/.test(filePath)) res.set('Cache-Control', 'no-store');
+  },
+}));
 
 const server = http.createServer(app);
 
