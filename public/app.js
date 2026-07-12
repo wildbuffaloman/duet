@@ -596,10 +596,14 @@
   // Right-click bridge: a sandboxed card iframe swallows contextmenu, so the card forwards it
   // up (as LINKER does for clicks) with frame-local cursor coords; the parent — which alone
   // knows the card's on-disk directory — shows the "copy folder path" menu (FB-6).
-  var CTX = '<script>(function(){document.addEventListener("contextmenu",function(e){e.preventDefault();try{parent.postMessage({__duet:"ctx",x:e.clientX,y:e.clientY},"*")}catch(x){}},true);})();</' + 'script>';
+  // A card iframe swallows both contextmenu AND ordinary clicks, so it forwards each up:
+  // right-click opens the copy-path menu; any pointerdown inside a card dismisses an open one
+  // (a parent-doc pointerdown listener never sees clicks that land inside an iframe).
+  var CTX = '<script>(function(){document.addEventListener("contextmenu",function(e){e.preventDefault();try{parent.postMessage({__duet:"ctx",x:e.clientX,y:e.clientY},"*")}catch(x){}},true);document.addEventListener("pointerdown",function(){try{parent.postMessage({__duet:"ctxclose"},"*")}catch(x){}},true);})();</' + 'script>';
   window.addEventListener("message", function(ev){
     var d = ev.data;
     if(!d) return;
+    if(d.__duet === "ctxclose"){ closeCtxMenu(); return; } // a click inside any card dismisses the menu
     if(d.__duet === "h" && typeof d.h === "number"){
       var frames = document.querySelectorAll(".card-frame");
       for(var i = 0; i < frames.length; i++){
@@ -649,6 +653,7 @@
     ctxMenuEl.remove(); ctxMenuEl = null;
     document.removeEventListener("pointerdown", onCtxMenuDown, true);
     document.removeEventListener("keydown", onCtxMenuKey, true);
+    window.removeEventListener("blur", closeCtxMenu);
   }
   function onCtxMenuDown(e){ if(ctxMenuEl && !ctxMenuEl.contains(e.target)) closeCtxMenu(); }
   function onCtxMenuKey(e){ if(e.key === "Escape") closeCtxMenu(); }
@@ -677,6 +682,7 @@
     setTimeout(function(){
       document.addEventListener("pointerdown", onCtxMenuDown, true);
       document.addEventListener("keydown", onCtxMenuKey, true);
+      window.addEventListener("blur", closeCtxMenu); // focus leaving to an iframe also dismisses
     }, 0);
   }
   function buildCardEl(cd, sid){
