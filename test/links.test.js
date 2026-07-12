@@ -109,3 +109,45 @@ test('listLinks reports ok / broken / file statuses', () => {
   assert.strictEqual(byName['broken.html'], 'broken');
   assert.strictEqual(byName['plain.html'], 'file');
 });
+
+test('unlinkCard refuses a path-traversal name and never deletes outside the session dir', () => {
+  const root = tmp();
+  const sessionDir = path.join(root, 'canvas', 's');       // two levels below root
+  fs.mkdirSync(sessionDir, { recursive: true });
+  const realTarget = path.join(root, 'canonical.html');
+  fs.writeFileSync(realTarget, 'x');
+  const outsideLink = path.join(root, 'evil.html');        // sessionDir/../../evil.html
+  fs.symlinkSync(realTarget, outsideLink);
+
+  assert.strictEqual(links.unlinkCard(sessionDir, '../../evil.html'), false);
+  assert.strictEqual(fs.lstatSync(outsideLink).isSymbolicLink(), true); // symlink survives
+  assert.strictEqual(fs.existsSync(realTarget), true);                  // target survives
+});
+
+test('linkInto rejects a non-renderable file type instead of coercing it', () => {
+  const root = tmp();
+  const md = path.join(root, 'notes.md');
+  fs.writeFileSync(md, '# hi');
+  const sessionDir = path.join(root, 's');
+
+  assert.throws(() => links.linkInto(sessionDir, md), /renderable card file/);
+  assert.strictEqual(fs.existsSync(path.join(sessionDir, 'notes.md')), false);
+});
+
+test('linkInto is idempotent when the same file is reached through a symlinked ancestor dir', () => {
+  const root = tmp();
+  const realDir = path.join(root, 'real');
+  fs.mkdirSync(realDir, { recursive: true });
+  const vault = path.join(realDir, 'note.html');
+  fs.writeFileSync(vault, 'x');
+  const linkDir = path.join(root, 'linked');
+  fs.symlinkSync(realDir, linkDir);                        // linkDir -> realDir
+  const sessionDir = path.join(root, 's');
+
+  const a = links.linkInto(sessionDir, vault);                             // via real path
+  const b = links.linkInto(sessionDir, path.join(linkDir, 'note.html'));   // via symlinked ancestor
+
+  assert.strictEqual(a.name, 'note.html');
+  assert.strictEqual(b.name, 'note.html');   // NOT note-2.html
+  assert.strictEqual(b.created, false);
+});
