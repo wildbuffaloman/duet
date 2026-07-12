@@ -31,6 +31,21 @@ test('duet link creates a symlink under ~/.duet/canvas/<sid>', () => {
   assert.match(out, /note\.html/);
 });
 
+test('duet link on a missing target prints a clean error, not a stack trace', () => {
+  const home = tmpHome();
+  let err;
+  try {
+    run(home, ['link', path.join(home, 'nope.html'), '--session', 's1']);
+  } catch (e) {
+    err = e;
+  }
+  assert.ok(err, 'should exit non-zero');
+  assert.strictEqual(err.status, 1);
+  const stderr = String(err.stderr || '');
+  assert.match(stderr, /^duet\b.*target does not exist/); // clean, prefixed once
+  assert.doesNotMatch(stderr, /\n\s+at /); // no Node stack-trace frames
+});
+
 test('duet links lists the session symlinks', () => {
   const home = tmpHome();
   const vault = path.join(home, 'note.html');

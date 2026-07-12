@@ -133,6 +133,8 @@ test('linkInto rejects a non-renderable file type instead of coercing it', () =>
 
   assert.throws(() => links.linkInto(sessionDir, md), /renderable card file/);
   assert.strictEqual(fs.existsSync(path.join(sessionDir, 'notes.md')), false);
+  // the reject happens before any filesystem side effect — no empty session dir
+  assert.strictEqual(fs.existsSync(sessionDir), false);
 });
 
 test('linkInto is idempotent when the same file is reached through a symlinked ancestor dir', () => {

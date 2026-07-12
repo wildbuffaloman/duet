@@ -99,17 +99,25 @@ function launch() {
 
 function main() {
   const [cmd, ...rest] = process.argv.slice(2);
-  switch (cmd) {
-    case undefined:
-    case 'up':
-    case 'start': return launch();
-    case 'link': return cmdLink(rest);
-    case 'unlink': return cmdUnlink(rest);
-    case 'links': return cmdLinks(rest);
-    case 'relink': return cmdRelink(rest);
-    default:
-      console.error(`duet: unknown command '${cmd}'. Commands: link, unlink, links, relink, (up)`);
-      process.exit(1);
+  try {
+    switch (cmd) {
+      case undefined:
+      case 'up':
+      case 'start': return launch();
+      case 'link': return cmdLink(rest);
+      case 'unlink': return cmdUnlink(rest);
+      case 'links': return cmdLinks(rest);
+      case 'relink': return cmdRelink(rest);
+      default:
+        console.error(`duet: unknown command '${cmd}'. Commands: link, unlink, links, relink, (up)`);
+        process.exit(1);
+    }
+  } catch (e) {
+    // A thrown command (e.g. linkInto/relinkArtifact rejecting a bad target)
+    // gets a clean one-line error, not a raw Node stack trace. Library messages
+    // already start with "duet …" — don't double-prefix them.
+    console.error(/^duet\b/.test(e.message) ? e.message : 'duet: ' + e.message);
+    process.exit(1);
   }
 }
 
