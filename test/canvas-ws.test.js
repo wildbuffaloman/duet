@@ -14,7 +14,6 @@ const WebSocket = require('ws');
 
 const PORT = 7601;
 const SESSION = 'test-fb1';
-const CANVAS_DIR = path.join(os.homedir(), '.duet', 'canvas', SESSION);
 const PNG_1X1_B64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
@@ -52,18 +51,19 @@ function nextMessage(ws, match, timeoutMs = 4000) {
 }
 
 test('an image dropped into the canvas dir arrives as an <img> card, and its removal removes it', async (t) => {
-  fs.rmSync(CANVAS_DIR, { recursive: true, force: true });
+  const HOME = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'duet-cws-')));
+  const CANVAS_DIR = path.join(HOME, '.duet', 'canvas', SESSION);
   fs.mkdirSync(CANVAS_DIR, { recursive: true });
 
   const srv = spawn('node', ['server.js'], {
     cwd: path.join(__dirname, '..'),
-    env: { ...process.env, DUET_PORT: String(PORT) },
+    env: { ...process.env, DUET_PORT: String(PORT), HOME },
     stdio: 'ignore',
   });
 
   t.after(() => {
     srv.kill();
-    fs.rmSync(CANVAS_DIR, { recursive: true, force: true });
+    fs.rmSync(HOME, { recursive: true, force: true });
   });
 
   await waitForHealth();
@@ -93,22 +93,22 @@ test('an image dropped into the canvas dir arrives as an <img> card, and its rem
 test('an import message copies a file in and broadcasts it as a card; a delete removes it', async (t) => {
   const PORT2 = 7602;
   const SESSION2 = 'test-fb2';
-  const CANVAS2 = path.join(os.homedir(), '.duet', 'canvas', SESSION2);
+  const HOME = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'duet-cws-')));
+  const CANVAS2 = path.join(HOME, '.duet', 'canvas', SESSION2);
 
   const srcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'duet-src-'));
   fs.writeFileSync(path.join(srcDir, 'my shot.png'), Buffer.from(PNG_1X1_B64, 'base64'));
 
-  fs.rmSync(CANVAS2, { recursive: true, force: true });
   fs.mkdirSync(CANVAS2, { recursive: true });
 
   const srv = spawn('node', ['server.js'], {
     cwd: path.join(__dirname, '..'),
-    env: { ...process.env, DUET_PORT: String(PORT2) },
+    env: { ...process.env, DUET_PORT: String(PORT2), HOME },
     stdio: 'ignore',
   });
   t.after(() => {
     srv.kill();
-    fs.rmSync(CANVAS2, { recursive: true, force: true });
+    fs.rmSync(HOME, { recursive: true, force: true });
     fs.rmSync(srcDir, { recursive: true, force: true });
   });
 
@@ -142,19 +142,19 @@ test('an import message copies a file in and broadcasts it as a card; a delete r
 test('the canvas snapshot advertises the absolute session directory (FB-6 copy-path)', async (t) => {
   const PORT3 = 7603;
   const SESSION3 = 'test-fb6';
-  const CANVAS3 = path.join(os.homedir(), '.duet', 'canvas', SESSION3);
+  const HOME = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'duet-cws-')));
+  const CANVAS3 = path.join(HOME, '.duet', 'canvas', SESSION3);
 
-  fs.rmSync(CANVAS3, { recursive: true, force: true });
   fs.mkdirSync(CANVAS3, { recursive: true });
 
   const srv = spawn('node', ['server.js'], {
     cwd: path.join(__dirname, '..'),
-    env: { ...process.env, DUET_PORT: String(PORT3) },
+    env: { ...process.env, DUET_PORT: String(PORT3), HOME },
     stdio: 'ignore',
   });
   t.after(() => {
     srv.kill();
-    fs.rmSync(CANVAS3, { recursive: true, force: true });
+    fs.rmSync(HOME, { recursive: true, force: true });
   });
 
   const deadline = Date.now() + 5000;
