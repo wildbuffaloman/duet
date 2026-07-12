@@ -25,6 +25,7 @@ const PORT = parseInt(process.env.DUET_PORT, 10) || 7433;
 const HOST = '127.0.0.1';
 
 const CANVAS_ROOT = path.join(os.homedir(), '.duet', 'canvas');
+const VAULT_ROOT = path.join(os.homedir(), 'Documents', 'Obsidian Vault');
 const SESSION_RE = /^[a-z0-9-]{1,32}$/;
 
 // ---------------------------------------------------------------------------
@@ -369,6 +370,16 @@ server.on('error', (err) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`duet listening on http://${HOST}:${PORT}`);
+  // Self-heal canvas symlinks left dangling by out-of-band vault moves.
+  // Bounded: relink cheap-exits (no vault scan) unless a link is actually broken.
+  // Deferred + best-effort so it never delays or breaks startup.
+  setImmediate(() => {
+    try {
+      const { relink } = require('./lib/links');
+      const r = relink(CANVAS_ROOT, [VAULT_ROOT], { recreate: false });
+      if (r.repaired.length) console.log(`duet: relink repaired ${r.repaired.length} symlink(s)`);
+    } catch (e) { /* self-heal is optional; ignore */ }
+  });
 });
 
 // ---------------------------------------------------------------------------

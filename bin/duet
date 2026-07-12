@@ -12,6 +12,7 @@ const linksLib = require('../lib/links');
 
 const ROOT = path.resolve(__dirname, '..');
 const CANVAS_ROOT = path.join(os.homedir(), '.duet', 'canvas');
+const VAULT_ROOT = path.join(os.homedir(), 'Documents', 'Obsidian Vault');
 
 function flag(args, name) {
   const i = args.indexOf(name);
@@ -54,6 +55,21 @@ function cmdLinks(args) {
   for (const r of rows) console.log(`${r.status.padEnd(6)} ${r.name}  ->  ${r.target || '(file)'}`);
 }
 
+function cmdRelink(args) {
+  const artifact = flag(args, '--artifact');
+  if (artifact) {
+    const r = linksLib.relinkArtifact(artifact);
+    console.log(r ? `re-pointed ${r.symlinkPath} -> ${r.target}` : 'no duet_symlink marker; nothing to do');
+    return;
+  }
+  const vaultRoot = flag(args, '--vault') || VAULT_ROOT;
+  const report = linksLib.relink(CANVAS_ROOT, [vaultRoot], { recreate: true });
+  console.log(
+    `relink: repaired ${report.repaired.length}, recreated ${report.recreated.length}, ` +
+    `stillBroken ${report.stillBroken.length}, orphans ${report.orphans.length}`
+  );
+}
+
 function launch() {
   const PORT = parseInt(process.env.DUET_PORT, 10) || 7433;
   const URL_BASE = `http://127.0.0.1:${PORT}`;
@@ -90,8 +106,9 @@ function main() {
     case 'link': return cmdLink(rest);
     case 'unlink': return cmdUnlink(rest);
     case 'links': return cmdLinks(rest);
+    case 'relink': return cmdRelink(rest);
     default:
-      console.error(`duet: unknown command '${cmd}'. Commands: link, unlink, links, (up)`);
+      console.error(`duet: unknown command '${cmd}'. Commands: link, unlink, links, relink, (up)`);
       process.exit(1);
   }
 }

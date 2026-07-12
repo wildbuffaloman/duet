@@ -53,3 +53,32 @@ test('duet unlink removes the symlink but not the vault file', () => {
   assert.strictEqual(fs.existsSync(path.join(home, '.duet', 'canvas', 's1', 'note.html')), false);
   assert.strictEqual(fs.existsSync(vault), true);
 });
+
+test('duet relink --artifact re-points the declared symlink', () => {
+  const home = tmpHome();
+  const sym = path.join(home, '.duet', 'canvas', 's1', 'a.html');
+  const artifact = path.join(home, 'proj', 'a.md');
+  fs.mkdirSync(path.dirname(artifact), { recursive: true });
+  fs.writeFileSync(artifact, `duet_symlink: ${sym}\n`);
+
+  run(home, ['relink', '--artifact', artifact]);
+
+  assert.strictEqual(fs.realpathSync(sym), artifact);
+});
+
+test('duet relink (full) repairs a broken link found under --vault', () => {
+  const home = tmpHome();
+  const sessionDir = path.join(home, '.duet', 'canvas', 's1');
+  const sym = path.join(sessionDir, 'a.html');
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.symlinkSync(path.join(home, 'old', 'a.md'), sym);          // broken
+  const vault = path.join(home, 'vault');
+  const moved = path.join(vault, 'a.md');
+  fs.mkdirSync(vault, { recursive: true });
+  fs.writeFileSync(moved, `duet_symlink: ${sym}\n`);
+
+  const out = run(home, ['relink', '--vault', vault]);
+
+  assert.strictEqual(fs.realpathSync(sym), moved);
+  assert.match(out, /repaired/i);
+});
