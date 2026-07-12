@@ -1,48 +1,99 @@
 #!/usr/bin/env node
 'use strict';
 
-// duet launcher: start the server from the repo root, wait for /health,
-// then open the browser.
+// duet CLI. No-arg (or `up`/`start`) launches the server + browser. The link
+// subcommands manage canonical-artifact symlinks in ~/.duet/canvas/<session>/.
 
 const path = require('path');
+const os = require('os');
 const http = require('http');
 const { spawn, execFile } = require('child_process');
+const linksLib = require('../lib/links');
 
 const ROOT = path.resolve(__dirname, '..');
-const PORT = parseInt(process.env.DUET_PORT, 10) || 7433;
-const URL_BASE = `http://127.0.0.1:${PORT}`;
+const CANVAS_ROOT = path.join(os.homedir(), '.duet', 'canvas');
 
-const server = spawn('node', [path.join(ROOT, 'server.js')], {
-  cwd: ROOT,
-  stdio: 'inherit',
-});
-
-server.on('exit', (code) => {
-  process.exit(code == null ? 1 : code);
-});
-
-const DEADLINE = Date.now() + 5000;
-
-function pollHealth() {
-  const req = http.get(`${URL_BASE}/health`, { timeout: 500 }, (res) => {
-    res.resume();
-    if (res.statusCode === 200) {
-      execFile('open', [URL_BASE]);
-      return;
-    }
-    retry();
-  });
-  req.on('timeout', () => req.destroy(new Error('timeout')));
-  req.on('error', retry);
+function flag(args, name) {
+  const i = args.indexOf(name);
+  return i >= 0 && i + 1 < args.length ? args[i + 1] : null;
 }
-
-function retry() {
-  if (Date.now() > DEADLINE) {
-    console.error(`duet: server did not become healthy at ${URL_BASE}/health within 5s`);
-    server.kill();
+function resolveSession(args) {
+  const sid = flag(args, '--session') || process.env.DUET_SESSION;
+  if (!sid) {
+    console.error('duet: no session — pass --session <sid> or set $DUET_SESSION');
     process.exit(1);
   }
-  setTimeout(pollHealth, 100);
+  return sid;
+}
+function positional(args) {
+  return args.filter((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--')));
 }
 
-pollHealth();
+function cmdLink(args) {
+  const [file] = positional(args);
+  if (!file) { console.error('usage: duet link <vault-file> [--session sid] [--as name]'); process.exit(1); }
+  const sid = resolveSession(args);
+  const sessionDir = path.join(CANVAS_ROOT, sid);
+  const r = linksLib.linkInto(sessionDir, file, { as: flag(args, '--as') || undefined });
+  console.log(r.symlinkPath);
+}
+
+function cmdUnlink(args) {
+  const [name] = positional(args);
+  if (!name) { console.error('usage: duet unlink <name> [--session sid]'); process.exit(1); }
+  const sid = resolveSession(args);
+  const ok = linksLib.unlinkCard(path.join(CANVAS_ROOT, sid), name);
+  if (!ok) { console.error(`duet: no symlink named ${name} in session ${sid}`); process.exit(1); }
+  console.log(`unlinked ${name}`);
+}
+
+function cmdLinks(args) {
+  const sid = resolveSession(args);
+  const rows = linksLib.listLinks(path.join(CANVAS_ROOT, sid));
+  if (rows.length === 0) { console.log('(no links)'); return; }
+  for (const r of rows) console.log(`${r.status.padEnd(6)} ${r.name}  ->  ${r.target || '(file)'}`);
+}
+
+function launch() {
+  const PORT = parseInt(process.env.DUET_PORT, 10) || 7433;
+  const URL_BASE = `http://127.0.0.1:${PORT}`;
+  const server = spawn('node', [path.join(ROOT, 'server.js')], { cwd: ROOT, stdio: 'inherit' });
+  server.on('exit', (code) => process.exit(code == null ? 1 : code));
+
+  const DEADLINE = Date.now() + 5000;
+  function pollHealth() {
+    const req = http.get(`${URL_BASE}/health`, { timeout: 500 }, (res) => {
+      res.resume();
+      if (res.statusCode === 200) { execFile('open', [URL_BASE]); return; }
+      retry();
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', retry);
+  }
+  function retry() {
+    if (Date.now() > DEADLINE) {
+      console.error(`duet: server did not become healthy at ${URL_BASE}/health within 5s`);
+      server.kill();
+      process.exit(1);
+    }
+    setTimeout(pollHealth, 100);
+  }
+  pollHealth();
+}
+
+function main() {
+  const [cmd, ...rest] = process.argv.slice(2);
+  switch (cmd) {
+    case undefined:
+    case 'up':
+    case 'start': return launch();
+    case 'link': return cmdLink(rest);
+    case 'unlink': return cmdUnlink(rest);
+    case 'links': return cmdLinks(rest);
+    default:
+      console.error(`duet: unknown command '${cmd}'. Commands: link, unlink, links, (up)`);
+      process.exit(1);
+  }
+}
+
+main();
