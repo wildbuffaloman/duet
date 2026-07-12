@@ -1,5 +1,6 @@
 'use strict';
 const test = require('node:test');
+const { mock } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
@@ -211,6 +212,21 @@ test('relinkArtifact returns null when the file has no marker', () => {
   assert.strictEqual(links.relinkArtifact(f), null);
 });
 
+test('relinkArtifact refuses to clobber a real (non-symlink) file at the declared path', () => {
+  const root = tmp();
+  const canvas = path.join(root, 'c', 's1');
+  fs.mkdirSync(canvas, { recursive: true });
+  const sym = path.join(canvas, 'a.html');
+  fs.writeFileSync(sym, 'REAL CANONICAL CONTENT');           // a real file, NOT a symlink
+  const artifact = path.join(root, 'moved', 'a.md');
+  fs.mkdirSync(path.dirname(artifact), { recursive: true });
+  fs.writeFileSync(artifact, `duet_symlink: ${sym}\n`);
+
+  assert.throws(() => links.relinkArtifact(artifact), /refusing to overwrite non-symlink/);
+  assert.strictEqual(fs.readFileSync(sym, 'utf8'), 'REAL CANONICAL CONTENT'); // untouched
+  assert.strictEqual(fs.lstatSync(sym).isSymbolicLink(), false);              // still a real file
+});
+
 test('relink repairs a broken symlink via reverse lookup', () => {
   const root = tmp();
   const canvasRoot = path.join(root, 'c');
@@ -240,6 +256,29 @@ test('relink reports stillBroken when no artifact claims the link', () => {
   assert.strictEqual(report.stillBroken.length, 1);
 });
 
+test('relink resolves a RELATIVE canvasRoot so reverse-lookup keys still match', () => {
+  const home = tmp();
+  const prevCwd = process.cwd();
+  try {
+    process.chdir(home);
+    const canvasRoot = path.join(home, 'c');
+    const sessionDir = path.join(canvasRoot, 's1');
+    const sym = path.join(sessionDir, 'a.html');            // ABSOLUTE canvas path
+    fs.mkdirSync(sessionDir, { recursive: true });
+    fs.symlinkSync(path.join(home, 'old', 'a.md'), sym);    // now broken
+    const moved = path.join(home, 'new', 'a.md');
+    fs.mkdirSync(path.dirname(moved), { recursive: true });
+    fs.writeFileSync(moved, `duet_symlink: ${sym}\n`);      // marker holds the absolute path
+
+    const report = links.relink('./c', [home]);             // RELATIVE canvasRoot
+    assert.strictEqual(report.repaired.length, 1);          // resolves, keys match, repair lands
+    assert.strictEqual(report.stillBroken.length, 0);
+    assert.strictEqual(fs.realpathSync(sym), moved);
+  } finally {
+    process.chdir(prevCwd);
+  }
+});
+
 test('relink cheap-exits (no vault scan) when nothing is broken and recreate is off', () => {
   const root = tmp();
   const canvasRoot = path.join(root, 'c');
@@ -250,6 +289,28 @@ test('relink cheap-exits (no vault scan) when nothing is broken and recreate is 
 
   const report = links.relink(canvasRoot, ['/nonexistent-root-that-would-error-if-scanned']);
   assert.deepStrictEqual(report, { repaired: [], recreated: [], stillBroken: [], orphans: [] });
+});
+
+test('relink cheap-exit PROVABLY does not scan roots (readdirSync spy) when canvas is healthy', () => {
+  const canvasHome = tmp();
+  const canvasRoot = path.join(canvasHome, 'c');
+  const sessionDir = path.join(canvasRoot, 's1');
+  const vault = path.join(canvasHome, 'a.html');
+  fs.writeFileSync(vault, 'x');
+  links.linkInto(sessionDir, vault);                       // healthy link, nothing broken
+
+  const rootsDir = tmp();                                   // a SEPARATE tree that must never be walked
+  const spy = mock.method(fs, 'readdirSync');              // spy, calls through to the real impl
+  try {
+    const report = links.relink(canvasRoot, [rootsDir]);   // recreate off
+    assert.strictEqual(report.repaired.length, 0);
+    const scannedRoots = spy.mock.calls
+      .map((c) => String(c.arguments[0]))
+      .filter((a) => a === rootsDir || a.startsWith(rootsDir + path.sep));
+    assert.deepStrictEqual(scannedRoots, []);              // scanArtifacts(roots) never ran
+  } finally {
+    mock.restoreAll();
+  }
 });
 
 test('relink with recreate:true rebuilds a missing symlink the artifact expects', () => {
