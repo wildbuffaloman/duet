@@ -138,3 +138,37 @@ test('an import message copies a file in and broadcasts it as a card; a delete r
 
   ws.close();
 });
+
+test('the canvas snapshot advertises the absolute session directory (FB-6 copy-path)', async (t) => {
+  const PORT3 = 7603;
+  const SESSION3 = 'test-fb6';
+  const CANVAS3 = path.join(os.homedir(), '.duet', 'canvas', SESSION3);
+
+  fs.rmSync(CANVAS3, { recursive: true, force: true });
+  fs.mkdirSync(CANVAS3, { recursive: true });
+
+  const srv = spawn('node', ['server.js'], {
+    cwd: path.join(__dirname, '..'),
+    env: { ...process.env, DUET_PORT: String(PORT3) },
+    stdio: 'ignore',
+  });
+  t.after(() => {
+    srv.kill();
+    fs.rmSync(CANVAS3, { recursive: true, force: true });
+  });
+
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    try { if ((await fetch(`http://127.0.0.1:${PORT3}/health`)).ok) break; } catch (e) { /* not up */ }
+    if (Date.now() > deadline) throw new Error('server did not become healthy');
+    await sleep(50);
+  }
+
+  const ws = new WebSocket(`ws://127.0.0.1:${PORT3}/canvas?session=${SESSION3}`);
+  await new Promise((res, rej) => { ws.once('open', res); ws.once('error', rej); });
+
+  const snap = await nextMessage(ws, (m) => m.type === 'snapshot');
+  assert.equal(snap.dir, CANVAS3, 'snapshot must carry the absolute canvas dir so the client can copy it');
+
+  ws.close();
+});

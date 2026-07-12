@@ -253,7 +253,9 @@ canvasWss.on('connection', (ws, req) => {
     return;
   }
 
-  ws.send(JSON.stringify({ type: 'snapshot', cards: snapshotCards(canvasDir) }));
+  // `dir` lets the client copy a card's on-disk location (FB-6); it's the absolute
+  // session canvas dir, known only server-side. Sent once per (re)connect.
+  ws.send(JSON.stringify({ type: 'snapshot', cards: snapshotCards(canvasDir), dir: canvasDir }));
 
   const entry = acquireWatcher(sessionId);
   entry.subscribers.add(ws);

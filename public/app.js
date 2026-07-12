@@ -537,7 +537,7 @@
   function acquireCanvas(sid, sub){
     var c = canvasConns[sid];
     if(!c){
-      c = canvasConns[sid] = { sid:sid, subs:[], ws:null, timer:0, cards:{}, order:[], gotSnapshot:false, dead:false };
+      c = canvasConns[sid] = { sid:sid, subs:[], ws:null, timer:0, cards:{}, order:[], gotSnapshot:false, dead:false, dir:"" };
       connectCanvas(c);
     }
     if(c.subs.indexOf(sub) < 0) c.subs.push(sub);
@@ -561,6 +561,7 @@
       var m = null; try { m = JSON.parse(ev.data); } catch(e){ return; }
       if(m.type === "snapshot"){
         c.cards = {}; c.order = [];
+        if(typeof m.dir === "string") c.dir = m.dir; // absolute canvas dir, for copy-path (FB-6)
         (m.cards || []).forEach(function(cd){ if(cd && cd.id != null){ c.cards[cd.id] = cd; c.order.push(cd.id); } });
         c.gotSnapshot = true;
         var list = c.order.map(function(id){ return c.cards[id]; });
@@ -592,6 +593,10 @@
   // Card links: sandboxed iframes can't navigate anything, so clicks on [data-duet-card] or href="duet:<id>"
   // post an "open" request up; the owning pane shows that card. Injected into every card — zero boilerplate.
   var LINKER = '<script>(function(){document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("[data-duet-card],a[href^=\'duet:\']"):null;if(!a)return;e.preventDefault();var id=a.getAttribute("data-duet-card")||(a.getAttribute("href")||"").slice(5);if(id)try{parent.postMessage({__duet:"open",card:String(id)},"*")}catch(x){}},true);})();</' + 'script>';
+  // Right-click bridge: a sandboxed card iframe swallows contextmenu, so the card forwards it
+  // up (as LINKER does for clicks) with frame-local cursor coords; the parent — which alone
+  // knows the card's on-disk directory — shows the "copy folder path" menu (FB-6).
+  var CTX = '<script>(function(){document.addEventListener("contextmenu",function(e){e.preventDefault();try{parent.postMessage({__duet:"ctx",x:e.clientX,y:e.clientY},"*")}catch(x){}},true);})();</' + 'script>';
   window.addEventListener("message", function(ev){
     var d = ev.data;
     if(!d) return;
@@ -615,8 +620,65 @@
           break;
         }
       }
+      return;
+    }
+    if(d.__duet === "ctx" && typeof d.x === "number" && typeof d.y === "number"){
+      var fr = document.querySelectorAll(".rp-frame, .card-frame");
+      for(var k = 0; k < fr.length; k++){
+        if(fr[k].contentWindow === ev.source){ // unforgeable — locate the right card's pane
+          var pane = fr[k].closest(".rp-body");
+          var win = pane && windows[pane.dataset.rw];
+          var conn = win && canvasConns[win.session];
+          var dir = conn && conn.dir;
+          if(dir){
+            var rect = fr[k].getBoundingClientRect(); // frame-local coords → viewport coords
+            showCtxMenu(rect.left + d.x, rect.top + d.y, dir);
+          } else {
+            toast("folder path not available yet");
+          }
+          break;
+        }
+      }
+      return;
     }
   });
+  /* ---------- right-click "copy folder path" menu (parent-doc; list + focus) ---------- */
+  var ctxMenuEl = null;
+  function closeCtxMenu(){
+    if(!ctxMenuEl) return;
+    ctxMenuEl.remove(); ctxMenuEl = null;
+    document.removeEventListener("pointerdown", onCtxMenuDown, true);
+    document.removeEventListener("keydown", onCtxMenuKey, true);
+  }
+  function onCtxMenuDown(e){ if(ctxMenuEl && !ctxMenuEl.contains(e.target)) closeCtxMenu(); }
+  function onCtxMenuKey(e){ if(e.key === "Escape") closeCtxMenu(); }
+  function fallbackCopy(text){
+    var ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.top = "-1000px"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try { document.execCommand("copy"); } catch(e){}
+    document.body.removeChild(ta);
+  }
+  function copyText(text){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).catch(function(){ fallbackCopy(text); }); // 127.0.0.1 is a secure context
+    } else { fallbackCopy(text); }
+  }
+  function showCtxMenu(x, y, dir){
+    closeCtxMenu();
+    var m = el("div", "pop");
+    var row = el("div", "prow rp-menu-row", '<span class="nm">⧉ copy folder path</span>');
+    row.addEventListener("click", function(){ copyText(dir); closeCtxMenu(); toast("folder path copied"); });
+    m.appendChild(row);
+    document.body.appendChild(m);
+    var mw = m.offsetWidth, mh = m.offsetHeight; // clamp inside the viewport
+    m.style.left = Math.max(8, Math.min(x, window.innerWidth - mw - 8)) + "px";
+    m.style.top = Math.max(8, Math.min(y, window.innerHeight - mh - 8)) + "px";
+    setTimeout(function(){
+      document.addEventListener("pointerdown", onCtxMenuDown, true);
+      document.addEventListener("keydown", onCtxMenuKey, true);
+    }, 0);
+  }
   function buildCardEl(cd, sid){
     var art = el("article", "card"); art.dataset.card = cd.id;
     var head = el("div", "card-head");
@@ -639,7 +701,7 @@
     var frame = document.createElement("iframe");
     frame.className = "card-frame";
     frame.setAttribute("sandbox", "allow-scripts");
-    frame.srcdoc = (cd.html || "") + SIZER + LINKER;
+    frame.srcdoc = (cd.html || "") + SIZER + LINKER + CTX;
     body.appendChild(frame);
     art.appendChild(body);
     return art;
@@ -703,7 +765,7 @@
       var frame = document.createElement("iframe");
       frame.className = "rp-frame";
       frame.setAttribute("sandbox", "allow-scripts");
-      frame.srcdoc = (cd.html || "") + LINKER; // no SIZER: the pane sizes the frame, content scrolls inside it
+      frame.srcdoc = (cd.html || "") + LINKER + CTX; // no SIZER: the pane sizes the frame, content scrolls inside it
       focusWrap.innerHTML = "";
       focusWrap.appendChild(frame);
       shownId = cd.id; shownMtime = cd.mtime;
