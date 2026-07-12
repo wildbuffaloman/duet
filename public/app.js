@@ -633,13 +633,21 @@
           var pane = fr[k].closest(".rp-body");
           var win = pane && windows[pane.dataset.rw];
           var conn = win && canvasConns[win.session];
-          var dir = conn && conn.dir;
-          if(dir){
-            var rect = fr[k].getBoundingClientRect(); // frame-local coords → viewport coords
-            showCtxMenu(rect.left + d.x, rect.top + d.y, dir);
-          } else {
-            toast("folder path not available yet");
+          if(!conn){ toast("folder path not available yet"); break; }
+          // Which card? List view: the .card ancestor carries its id. Focus view:
+          // the .rp-frame shows the pane's current card (asked via the controller).
+          var cardEl = fr[k].closest(".card");
+          var cid = cardEl ? cardEl.dataset.card : null;
+          if(cid == null){
+            var ctl = pane && renderCtls[pane.dataset.rw];
+            cid = (ctl && ctl.shownCardId) ? ctl.shownCardId() : null;
           }
+          var card = (cid != null && conn.cards) ? conn.cards[cid] : null;
+          var src = card && card.src; // resolved vault file for a symlinked card (FB-10)
+          var folder = src ? dirnameOf(src) : conn.dir; // fall back to the session canvas dir
+          if(!folder){ toast("folder path not available yet"); break; }
+          var rect = fr[k].getBoundingClientRect(); // frame-local coords → viewport coords
+          showCtxMenu(rect.left + d.x, rect.top + d.y, { file: src || null, folder: folder });
           break;
         }
       }
@@ -669,12 +677,19 @@
       navigator.clipboard.writeText(text).catch(function(){ fallbackCopy(text); }); // 127.0.0.1 is a secure context
     } else { fallbackCopy(text); }
   }
-  function showCtxMenu(x, y, dir){
+  function dirnameOf(p){ var i = String(p).lastIndexOf("/"); return i > 0 ? p.slice(0, i) : (i === 0 ? "/" : String(p)); }
+  function ctxRow(label, text, okMsg){
+    var row = el("div", "prow rp-menu-row", '<span class="nm">⧉ ' + label + '</span>');
+    row.addEventListener("click", function(){ copyText(text); closeCtxMenu(); toast(okMsg); });
+    return row;
+  }
+  // info: { file: <abs path|null>, folder: <abs path> } — a symlinked card yields both
+  // its canonical vault file and that file's folder; a real card, its canvas-dir path.
+  function showCtxMenu(x, y, info){
     closeCtxMenu();
     var m = el("div", "pop");
-    var row = el("div", "prow rp-menu-row", '<span class="nm">⧉ copy folder path</span>');
-    row.addEventListener("click", function(){ copyText(dir); closeCtxMenu(); toast("folder path copied"); });
-    m.appendChild(row);
+    if(info.file) m.appendChild(ctxRow("copy file path", info.file, "file path copied"));
+    m.appendChild(ctxRow("copy folder path", info.folder, "folder path copied"));
     document.body.appendChild(m);
     ctxMenuEl = m; // TRACK it — without this, closeCtxMenu/dismiss handlers have nothing to remove
     var mw = m.offsetWidth, mh = m.offsetHeight; // clamp inside the viewport
@@ -912,7 +927,7 @@
     syncBar();
     focusWrap.appendChild(emptyState());
     acquireCanvas(w.session, sub);
-    renderCtls[w.id] = { openCard:openCard, dispose:function(){ closeMenu(); releaseCanvas(w.session, sub); } };
+    renderCtls[w.id] = { openCard:openCard, shownCardId:function(){ return shownId; }, dispose:function(){ closeMenu(); releaseCanvas(w.session, sub); } };
     return body;
   }
 

@@ -172,3 +172,44 @@ test('the canvas snapshot advertises the absolute session directory (FB-6 copy-p
 
   ws.close();
 });
+
+test('a symlinked card advertises its resolved vault target as src (FB-10 copy-file-path)', async (t) => {
+  const PORT4 = 7604;
+  const SESSION4 = 'test-fb10';
+  const HOME = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'duet-cws-')));
+  const CANVAS4 = path.join(HOME, '.duet', 'canvas', SESSION4);
+  fs.mkdirSync(CANVAS4, { recursive: true });
+
+  // canonical vault file (real name has a space) ← symlink with a card-safe name
+  const target = path.join(HOME, 'Documents', 'Obsidian Vault', 'Heros Quest.html');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, '<title>Quest</title><h1>Quest</h1>');
+  fs.symlinkSync(target, path.join(CANVAS4, 'heros-quest.html'));
+
+  const srv = spawn('node', ['server.js'], {
+    cwd: path.join(__dirname, '..'),
+    env: { ...process.env, DUET_PORT: String(PORT4), HOME },
+    stdio: 'ignore',
+  });
+  t.after(() => {
+    srv.kill();
+    fs.rmSync(HOME, { recursive: true, force: true });
+  });
+
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    try { if ((await fetch(`http://127.0.0.1:${PORT4}/health`)).ok) break; } catch (e) { /* not up */ }
+    if (Date.now() > deadline) throw new Error('server did not become healthy');
+    await sleep(50);
+  }
+
+  const ws = new WebSocket(`ws://127.0.0.1:${PORT4}/canvas?session=${SESSION4}`);
+  await new Promise((res, rej) => { ws.once('open', res); ws.once('error', rej); });
+
+  const snap = await nextMessage(ws, (m) => m.type === 'snapshot');
+  const card = (snap.cards || []).find((c) => c.id === 'heros-quest');
+  assert.ok(card, 'the symlinked card must appear in the snapshot');
+  assert.equal(card.src, target, 'src must be the resolved vault file, not the symlink path in the canvas dir');
+
+  ws.close();
+});

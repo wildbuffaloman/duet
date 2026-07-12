@@ -284,3 +284,38 @@ test('buildCard returns null for a broken symlink', () => {
   fs.symlinkSync(path.join(home, 'gone.html'), path.join(canvasDir, 'dangling.html'));
   assert.strictEqual(buildCard(canvasDir, 'dangling.html', { homeRoot: home }), null);
 });
+
+// ---------------------------------------------------------------------------
+// FB-10 — buildCard exposes each card's canonical on-disk path as `src`.
+// A symlinked card resolves to its vault target (what the client copies);
+// a real card is its own path; a blocked card exposes nothing.
+// ---------------------------------------------------------------------------
+
+test('buildCard exposes a symlinked card src as its resolved vault target', () => {
+  const { home, canvasDir } = tmpHomeDirs();
+  const target = path.join(home, 'Documents', 'Obsidian Vault', 'Heros Quest.html');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, '<title>Quest</title>');
+  fs.symlinkSync(target, path.join(canvasDir, 'heros-quest.html'));
+
+  const card = buildCard(canvasDir, 'heros-quest.html', { homeRoot: home });
+  // the canonical vault file, NOT ~/.duet/canvas/s1/heros-quest.html (the symlink)
+  assert.strictEqual(card.src, target);
+});
+
+test('buildCard exposes a real card src as its own path in the canvas dir', () => {
+  const dir = tmpCanvas();
+  write(dir, 'report.html', '<title>R</title>');
+  const card = buildCard(dir, 'report.html');
+  assert.strictEqual(card.src, path.join(dir, 'report.html'));
+});
+
+test('a blocked card carries no src — no safe path to expose', () => {
+  const { home, canvasDir } = tmpHomeDirs();
+  const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'duet-outside-')));
+  const secret = path.join(outside, 'secret.html');
+  fs.writeFileSync(secret, '<title>S</title>');
+  fs.symlinkSync(secret, path.join(canvasDir, 'secret.html'));
+  const card = buildCard(canvasDir, 'secret.html', { homeRoot: home });
+  assert.strictEqual(card.src, undefined);
+});
