@@ -151,3 +151,116 @@ test('linkInto is idempotent when the same file is reached through a symlinked a
   assert.strictEqual(b.name, 'note.html');   // NOT note-2.html
   assert.strictEqual(b.created, false);
 });
+
+test('expandTilde expands a leading ~ to the home dir', () => {
+  assert.strictEqual(links.expandTilde('~/.duet/canvas/s1/a.html'),
+    path.join(os.homedir(), '.duet/canvas/s1/a.html'));
+  assert.strictEqual(links.expandTilde('/abs/path'), '/abs/path');
+});
+
+test('readDuetSymlink extracts a YAML-style marker and normalizes ~', () => {
+  const root = tmp();
+  const f = path.join(root, 'note.md');
+  fs.writeFileSync(f, '---\nproject: "[[X]]"\nduet_symlink: ~/.duet/canvas/s1/note.html\n---\nbody');
+  assert.strictEqual(links.readDuetSymlink(f), path.join(os.homedir(), '.duet/canvas/s1/note.html'));
+});
+
+test('readDuetSymlink tolerates an HTML block-comment marker with a trailing -->', () => {
+  const root = tmp();
+  const f = path.join(root, 'note.html');
+  fs.writeFileSync(f, '<!--\nduet_symlink: /abs/s1/note.html\n-->\n<h1>x</h1>');
+  assert.strictEqual(links.readDuetSymlink(f), '/abs/s1/note.html');
+});
+
+test('readDuetSymlink returns null when no marker is present', () => {
+  const root = tmp();
+  const f = path.join(root, 'plain.md');
+  fs.writeFileSync(f, '# just a note');
+  assert.strictEqual(links.readDuetSymlink(f), null);
+});
+
+test('scanArtifacts maps declared symlink paths to their artifact files', () => {
+  const root = tmp();
+  const a = path.join(root, 'proj', 'a.md');
+  fs.mkdirSync(path.dirname(a), { recursive: true });
+  fs.writeFileSync(a, 'duet_symlink: /c/s1/a.html\n');
+  fs.writeFileSync(path.join(root, 'proj', 'plain.md'), 'no marker');
+
+  const map = links.scanArtifacts([root]);
+  assert.strictEqual(map.get('/c/s1/a.html'), a);
+  assert.strictEqual(map.size, 1);
+});
+
+test('relinkArtifact re-points the declared symlink at the artifact', () => {
+  const root = tmp();
+  const canvas = path.join(root, 'c', 's1');
+  const sym = path.join(canvas, 'a.html');
+  const artifact = path.join(root, 'moved', 'a.md');
+  fs.mkdirSync(path.dirname(artifact), { recursive: true });
+  fs.writeFileSync(artifact, `duet_symlink: ${sym}\n`);
+
+  const r = links.relinkArtifact(artifact);
+  assert.strictEqual(r.symlinkPath, sym);
+  assert.strictEqual(fs.realpathSync(sym), artifact);
+});
+
+test('relinkArtifact returns null when the file has no marker', () => {
+  const root = tmp();
+  const f = path.join(root, 'x.md');
+  fs.writeFileSync(f, 'nothing');
+  assert.strictEqual(links.relinkArtifact(f), null);
+});
+
+test('relink repairs a broken symlink via reverse lookup', () => {
+  const root = tmp();
+  const canvasRoot = path.join(root, 'c');
+  const sessionDir = path.join(canvasRoot, 's1');
+  const sym = path.join(sessionDir, 'a.html');
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.symlinkSync(path.join(root, 'old', 'a.md'), sym);       // now broken (old path gone)
+  const moved = path.join(root, 'new', 'a.md');
+  fs.mkdirSync(path.dirname(moved), { recursive: true });
+  fs.writeFileSync(moved, `duet_symlink: ${sym}\n`);
+
+  const report = links.relink(canvasRoot, [root]);
+  assert.strictEqual(report.repaired.length, 1);
+  assert.strictEqual(fs.realpathSync(sym), moved);
+  assert.strictEqual(report.stillBroken.length, 0);
+});
+
+test('relink reports stillBroken when no artifact claims the link', () => {
+  const root = tmp();
+  const canvasRoot = path.join(root, 'c');
+  const sessionDir = path.join(canvasRoot, 's1');
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.symlinkSync(path.join(root, 'gone.md'), path.join(sessionDir, 'orphan.html'));
+
+  const report = links.relink(canvasRoot, [root]);
+  assert.strictEqual(report.repaired.length, 0);
+  assert.strictEqual(report.stillBroken.length, 1);
+});
+
+test('relink cheap-exits (no vault scan) when nothing is broken and recreate is off', () => {
+  const root = tmp();
+  const canvasRoot = path.join(root, 'c');
+  const sessionDir = path.join(canvasRoot, 's1');
+  const vault = path.join(root, 'a.html');
+  fs.writeFileSync(vault, 'x');
+  links.linkInto(sessionDir, vault);                          // healthy link
+
+  const report = links.relink(canvasRoot, ['/nonexistent-root-that-would-error-if-scanned']);
+  assert.deepStrictEqual(report, { repaired: [], recreated: [], stillBroken: [], orphans: [] });
+});
+
+test('relink with recreate:true rebuilds a missing symlink the artifact expects', () => {
+  const root = tmp();
+  const canvasRoot = path.join(root, 'c');
+  const sym = path.join(canvasRoot, 's1', 'a.html');
+  const artifact = path.join(root, 'proj', 'a.md');
+  fs.mkdirSync(path.dirname(artifact), { recursive: true });
+  fs.writeFileSync(artifact, `duet_symlink: ${sym}\n`);        // symlink does not exist yet
+
+  const report = links.relink(canvasRoot, [root], { recreate: true });
+  assert.strictEqual(report.recreated.length, 1);
+  assert.strictEqual(fs.realpathSync(sym), artifact);
+});
