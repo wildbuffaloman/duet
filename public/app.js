@@ -676,6 +676,7 @@
     row.addEventListener("click", function(){ copyText(dir); closeCtxMenu(); toast("folder path copied"); });
     m.appendChild(row);
     document.body.appendChild(m);
+    ctxMenuEl = m; // TRACK it — without this, closeCtxMenu/dismiss handlers have nothing to remove
     var mw = m.offsetWidth, mh = m.offsetHeight; // clamp inside the viewport
     m.style.left = Math.max(8, Math.min(x, window.innerWidth - mw - 8)) + "px";
     m.style.top = Math.max(8, Math.min(y, window.innerHeight - mh - 8)) + "px";
