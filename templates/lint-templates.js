@@ -9,18 +9,28 @@ let bad = 0;
 for (const f of files) {
   const src = fs.readFileSync(path.join(dir, f), "utf8");
   const fail = msg => { console.log(`${f}: ${msg}`); bad++; };
+  // universal contract
   if (!/<title>[^<]+<\/title>/.test(src)) fail("missing <title>");
   if (!src.includes('"use strict"')) fail('missing "use strict"');
-  if (!src.includes("CRITIQUE-KIT BEGIN") || !src.includes("CRITIQUE-KIT END"))
-    fail("missing CRITIQUE-KIT fences");
   if (!src.includes("===== DATA BLOCKS") || !src.includes("===== END DATA BLOCKS"))
     fail("missing DATA BLOCKS markers");
-  if (!src.includes("function emitToSession")) fail("missing emitToSession hook slot");
-  // external resource refs (comments stripped first; duet: hrefs allowed)
+  // metadata header (universal)
+  const meta = (src.match(/<!--\s*HTML-TEMPLATE-META([\s\S]*?)-->/) || [])[1];
+  if (!meta) fail("missing HTML-TEMPLATE-META block");
+  else for (const k of ["name", "category", "task-shape", "capabilities"])
+    if (!new RegExp("(^|\\n)\\s*" + k + "\\s*:", "i").test(meta)) fail(`meta missing '${k}:'`);
+  const caps = ((meta && meta.match(/\ncapabilities\s*:\s*([^\n]*)/i)) || [])[1] || "";
+  const hasKit = /\bcritique-kit\b/i.test(caps);
+  // critique-kit checks (only when the template declares the capability)
+  if (hasKit) {
+    if (!src.includes("CRITIQUE-KIT BEGIN") || !src.includes("CRITIQUE-KIT END"))
+      fail("declares critique-kit but missing CRITIQUE-KIT fences");
+    if (!src.includes("function emitToSession"))
+      fail("declares critique-kit but missing emitToSession hook slot");
+  }
+  // external resource refs (comments stripped first)
   const noComments = src.replace(/<!--[\s\S]*?-->/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
   if (/(src|href)\s*=\s*["']https?:/i.test(noComments)) fail("external http(s) resource reference");
-  // Match actual USAGE, not prose that merely names the API (a template's content data may
-  // legitimately describe localStorage/WebSocket). Usage = call form or member access.
   if (/\bfetch\s*\(|\blocalStorage\s*[.\[]|\bsessionStorage\s*[.\[]|new\s+XMLHttpRequest|\bXMLHttpRequest\s*\(|new\s+WebSocket|\bWebSocket\s*\(/.test(noComments))
     fail("network/storage API used (sandbox-unsafe)");
 }
