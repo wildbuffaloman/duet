@@ -112,6 +112,11 @@
     padding:10px 16px;cursor:pointer}
   #copy:hover{filter:brightness(1.08)}
   @media (prefers-reduced-motion: reduce){ .node.pulse{transform:none} }
+  /* This template has its own prompt bar (below); suppress the shared kit's default feedback UI
+     so the two don't duplicate. Kept OUT of the CRITIQUE-KIT fence on purpose — the fence stays
+     byte-identical to _skeleton.html so kit fixes propagate cleanly. */
+  .kit-box{display:none}
+  h2:has(+ .kit-box){display:none}
 </style>
 </head>
 <body>
@@ -464,8 +469,8 @@ if(window.ResizeObserver) new ResizeObserver(drawWires).observe($("#diagram"));
 </script>
 
 <!-- CRITIQUE-KIT BEGIN (shared machinery — keep in sync across library, see _skeleton.html) -->
-<h2 style="display:none">Compiled feedback</h2>
-<div class="kit-box" style="display:none"><div class="kit-out" id="kit-out"></div>
+<h2>Compiled feedback</h2>
+<div class="kit-box"><div class="kit-out" id="kit-out"></div>
 <button class="kit-copy" id="kit-copy">Copy feedback</button></div>
 <script>
 "use strict";
