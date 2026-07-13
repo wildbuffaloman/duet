@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stage the node sidecar payload for the Tauri bundle (M1.5 sidecar v1).
 # Layout produced:
-#   src-tauri/resources/server/{server.js,package.json,public/,node_modules/}  (prod deps only)
+#   src-tauri/resources/server/{server.js,package.json,lib/,public/,node_modules/}  (prod deps only)
 #   src-tauri/binaries/node-<target-triple>                                    (current node binary)
 set -euo pipefail
 
@@ -13,6 +13,7 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE" "$BIN"
 
 cp "$ROOT/server.js" "$ROOT/package.json" "$ROOT/package-lock.json" "$STAGE/"
+rsync -a "$ROOT/lib/" "$STAGE/lib/"
 rsync -a --exclude bench "$ROOT/public/" "$STAGE/public/"
 
 (cd "$STAGE" && npm ci --omit=dev --silent)
