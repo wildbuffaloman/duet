@@ -1,5 +1,7 @@
 # CLAUDE.md — duet
 
+> **Vault Project Brief:** `01 PROJECTS/Duet — Tiling Agent Terminal/Duet — Tiling Agent Terminal.md`
+
 duet is a local tiling agent terminal: every pane is a real terminal (PTY + xterm.js/WebGL) or a
 live HTML render surface, linked by *session*. The canvas is a directory — writing a self-contained
 `.html` file to `$DUET_CANVAS` (`~/.duet/canvas/<session>/`) renders a live card. Transport is
